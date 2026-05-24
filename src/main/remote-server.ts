@@ -144,6 +144,10 @@ interface RemoteConfig {
   customPresets: CustomPreset[];
 }
 
+function generateAccessToken(): string {
+  return crypto.randomBytes(16).toString('hex');
+}
+
 function loadOrCreateConfig(): RemoteConfig {
   if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
   if (fs.existsSync(CONFIG_FILE)) {
@@ -151,7 +155,7 @@ function loadOrCreateConfig(): RemoteConfig {
       const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')) as Partial<RemoteConfig>;
       const fallbackKeys = webpush.generateVAPIDKeys();
       return {
-        token: '123456',
+        token: typeof raw.token === 'string' && raw.token.trim() ? raw.token.trim() : generateAccessToken(),
         vapidPublic: raw.vapidPublic || fallbackKeys.publicKey,
         vapidPrivate: raw.vapidPrivate || fallbackKeys.privateKey,
         pushSubscriptions: Array.isArray(raw.pushSubscriptions) ? raw.pushSubscriptions : [],
@@ -162,7 +166,7 @@ function loadOrCreateConfig(): RemoteConfig {
   }
   const vapidKeys = webpush.generateVAPIDKeys();
   const config: RemoteConfig = {
-    token: '123456',
+    token: generateAccessToken(),
     vapidPublic: vapidKeys.publicKey,
     vapidPrivate: vapidKeys.privateKey,
     pushSubscriptions: [],

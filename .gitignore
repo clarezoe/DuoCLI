@@ -27,4 +27,16 @@ npm-debug.log*
 *.bak
 
 # FRP config (private)
-frp/
+frp/*
+!frp/README.md
+!frp/start-cloudflared.sh
+!frp/status-cloudflared.sh
+!frp/stop-cloudflared.sh
+!frp/cloudflared-config.yml
+!frp/DuoCLI-远程启动.scpt
+!frp/创建桌面启动器.command
+frp/*.log
+
+# Local secrets
+.env
+.env.*

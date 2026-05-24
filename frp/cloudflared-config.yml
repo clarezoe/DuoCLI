@@ -1,0 +1,8 @@
+tunnel: YOUR_TUNNEL_NAME
+credentials-file: /ABSOLUTE/PATH/TO/.cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: duocli.example.com
+    service: http://127.0.0.1:9800
+
+  - service: http_status:404
