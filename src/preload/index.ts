@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('duocli', {
   // 设置窗口标题
   setWindowTitle: (title: string) => ipcRenderer.send('window:set-title', title),
+  onCloseCurrentSession: (cb: () => void) =>
+    ipcRenderer.on('app:close-current-session', () => cb()),
 
   // 创建终端
   createPty: (cwd: string, presetCommand: string, themeId: string, providerEnv?: Record<string, string>) =>
@@ -101,6 +103,8 @@ contextBridge.exposeInMainWorld('duocli', {
   devinAccountsRemove: (email: string) => ipcRenderer.invoke('devin-accounts:remove', email),
   devinAccountsSwitch: (opts: { email?: string; next?: boolean }) => ipcRenderer.invoke('devin-accounts:switch', opts),
   devinAccountsQuota: () => ipcRenderer.invoke('devin-accounts:quota'),
+  devinAccountsQuotaAll: () => ipcRenderer.invoke('devin-accounts:quota-all'),
+  devinAccountsQuotaOne: (email: string) => ipcRenderer.invoke('devin-accounts:quota-one', email),
   devinAccountsRotateDevice: () => ipcRenderer.invoke('devin-accounts:rotate-device'),
 
   // 会话状态同步：renderer → main（供手机端读取）
@@ -145,8 +149,16 @@ contextBridge.exposeInMainWorld('duocli', {
   closedSessionsList: () => ipcRenderer.invoke('closed-sessions:list'),
   closedSessionsRemove: (id: string) => ipcRenderer.invoke('closed-sessions:remove', id),
   closedSessionsClear: () => ipcRenderer.invoke('closed-sessions:clear'),
-  onClosedSessionsUpdate: (cb: (sessions: Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; displayName: string; closedAt: number }>) => void) =>
+  onClosedSessionsUpdate: (cb: (sessions: Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>) => void) =>
     ipcRenderer.on('closed-sessions:update', (_e, sessions) => cb(sessions)),
+
+  // ========== 已关闭 Chat 会话 ==========
+  closedChatList: () => ipcRenderer.invoke('closed-chat:list'),
+  closedChatRemove: (id: string) => ipcRenderer.invoke('closed-chat:remove', id),
+  closedChatClear: () => ipcRenderer.invoke('closed-chat:clear'),
+  chatRestore: (closedId: string) => ipcRenderer.invoke('chat:restore', closedId),
+  onClosedChatUpdate: (cb: (sessions: Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>) => void) =>
+    ipcRenderer.on('closed-chat-sessions:update', (_e, sessions) => cb(sessions)),
 
   // 自动切号状态
   onAutoSwitchStatus: (cb: (id: string, status: string, detail?: string) => void) =>

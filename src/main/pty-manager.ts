@@ -31,6 +31,8 @@ export interface PtySession {
   disposables: pty.IDisposable[];
   switchAttempts: number;        // 本轮自动切号已尝试次数
   lastAutoSwitchAt: number;      // 上次自动切号时间戳
+  rateLimitRetryCount: number;   // 连续 rate limit 重试"继续"次数（成功后重置）
+  lastRateLimitAt: number;       // 上次检测到 rate limit 的时间戳（用于判断连续性）
 }
 
 interface PtyManagerEvents {
@@ -67,6 +69,33 @@ function stripTerminalControlSequences(text: string): string {
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 }
 
+// 各 CLI 的 resume 命令格式不同，逐一匹配
+// 返回完整恢复命令和会话 ID，无匹配返回 null
+function parseResumeCommand(text: string): { command: string; sessionId: string } | null {
+  const patterns: Array<{ re: RegExp; build: (m: RegExpMatchArray) => string }> = [
+    // Cursor Agent: "agent --resume=<uuid>"
+    { re: /\b(agent)\s+--resume=([\w-]+)/i, build: m => `${m[1]} --resume=${m[2]}` },
+    // Claude Code: "claude --resume <uuid>"
+    { re: /\b(claude)\s+--resume\s+([\w-]+)/i, build: m => `${m[1]} --resume ${m[2]}` },
+    // Kiro: "kiro-cli --resume-id <uuid>"
+    { re: /\b(kiro[\w-]*)\s+--resume-id\s+([\w-]+)/i, build: m => `${m[1]} --resume-id ${m[2]}` },
+    // Codex: "codex resume <id>"
+    { re: /\b(codex)\s+resume\s+([\w-]+)/i, build: m => `${m[1]} resume ${m[2]}` },
+    // OpenCode: "opencode -s <ses_id>"
+    { re: /\b(opencode)\s+-s\s+(\w+)/i, build: m => `${m[1]} -s ${m[2]}` },
+    // Devin: "devin -r <session_name>"
+    { re: /\b(devin)\s+-r\s+([\w-]+)/i, build: m => `${m[1]} -r ${m[2]}` },
+  ];
+
+  for (const { re, build } of patterns) {
+    const match = text.match(re);
+    if (match) {
+      return { command: build(match), sessionId: match[2] };
+    }
+  }
+  return null;
+}
+
 // 读取 Devin 可用账号数（用于限制自动切号轮次）
 function getDevinAccountCount(): number {
   try {
@@ -85,8 +114,16 @@ const DEVIN_INSTALLATION_ID_PATHS = [
   path.join(os.homedir(), '.local', 'share', 'devin', 'cli-next', 'installation_id'),
 ];
 
+// Windsurf Electron 设备 ID（Devin 二进制会读取 Windsurf 配置路径）
+const WINDSURF_MACHINEID_PATHS = [
+  path.join(os.homedir(), 'Library', 'Application Support', 'Windsurf', 'machineid'),
+  path.join(os.homedir(), 'Library', 'Application Support', 'Windsurf - Next', 'machineid'),
+];
+
 export function rotateDevinInstallationId(): void {
   const newId = crypto.randomUUID().toUpperCase();
+
+  // 1) Devin CLI installation_id
   for (const p of DEVIN_INSTALLATION_ID_PATHS) {
     try {
       if (fs.existsSync(p)) {
@@ -101,6 +138,19 @@ export function rotateDevinInstallationId(): void {
       }
     } catch (e) {
       console.warn(`[PTY] Failed to rotate installation_id ${p}:`, (e as Error).message);
+    }
+  }
+
+  // 2) Windsurf machineid（用不同的 UUID，避免两个 ID 相同引发关联）
+  const newMachineId = crypto.randomUUID().toUpperCase();
+  for (const p of WINDSURF_MACHINEID_PATHS) {
+    try {
+      if (fs.existsSync(p)) {
+        fs.writeFileSync(p, newMachineId);
+        console.log(`[PTY] Rotated machineid: ${p} → ${newMachineId}`);
+      }
+    } catch (e) {
+      console.warn(`[PTY] Failed to rotate machineid ${p}:`, (e as Error).message);
     }
   }
 }
@@ -187,6 +237,8 @@ export class PtyManager {
       retryTimer: null,
       switchAttempts: 0,
       lastAutoSwitchAt: 0,
+      rateLimitRetryCount: 0,
+      lastRateLimitAt: 0,
       disposables: [],
     };
 
@@ -241,13 +293,13 @@ export class PtyManager {
         }
       }
 
-      // 实时捕获 resume session ID（Claude Code 退出时输出 "claude --resume <uuid>"）
-      if (!session.resumeId && data.toLowerCase().includes('resume')) {
+      // 实时捕获各 CLI 的 resume 命令（格式各异）
+      if (!session.resumeId) {
         const stripped = stripTerminalControlSequences(data);
-        const resumeMatch = stripped.match(/(\S+)\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-        if (resumeMatch) {
-          session.resumeId = resumeMatch[2];
-          session.resumeCommand = `${resumeMatch[1]} --resume ${resumeMatch[2]}`;
+        const result = parseResumeCommand(stripped);
+        if (result) {
+          session.resumeId = result.sessionId;
+          session.resumeCommand = result.command;
         }
       }
 
@@ -257,89 +309,92 @@ export class PtyManager {
         const combinedLower = (session.prevData + data).toLowerCase();
         session.prevData = data;
 
-        // 统一用 ⚠ / 错误关键字检测 Devin 报错
-        const hasWarningSign = combinedLower.includes('⚠')
-          || combinedLower.includes('something went wrong')
-          || combinedLower.includes('permission denied');
+        // 检测 rate limit 相关错误（涵盖硬限流和软限流）
+        // 典型特征: "Permission denied: Reached overall message rate limit"
+        const isRateLimit = combinedLower.includes('rate limit')
+          || combinedLower.includes('quota exhausted')
+          || combinedLower.includes('usage is exhausted');
 
-        // 1) 硬限流（需切号）
-        //    quota exhausted / usage is exhausted — 足够特异，不需要 ⚠ 门控
-        //    overall message rate limit / permission denied + rate limit — 账号级硬限制
-        const isHardLimit = combinedLower.includes('quota exhausted')
-          || combinedLower.includes('usage is exhausted')
-          || combinedLower.includes('overall message rate limit')
-          || (combinedLower.includes('permission denied') && combinedLower.includes('rate limit'));
+        // 严格匹配：连续出现 rate limit 错误的判定阈值
+        const RATE_LIMIT_RETRY_MAX = 3;       // 发"继续"最多尝试次数
+        const RATE_LIMIT_WINDOW = 15000;      // 窗口期：15 秒内的连续 rate limit 才算一轮
 
-        if (isHardLimit) {
+        if (isRateLimit) {
           session.prevData = '';
-          const maxAccounts = getDevinAccountCount();
           const now = Date.now();
 
-          if (session.switchAttempts >= maxAccounts) {
-            // 所有账号都试过了，停止切号
+          // 防止 PTY 分片导致的重复触发：如果已有 retryTimer 在跑，跳过本次
+          if (session.retryTimer) return;
+
+          // 超出窗口期则重新计数（上一次 rate limit 已久，不算连续）
+          if (now - session.lastRateLimitAt > RATE_LIMIT_WINDOW) {
+            session.rateLimitRetryCount = 0;
+          }
+          session.lastRateLimitAt = now;
+          session.rateLimitRetryCount++;
+
+          const maxAccounts = getDevinAccountCount();
+
+          if (session.rateLimitRetryCount <= RATE_LIMIT_RETRY_MAX) {
+            // 阶段 1: 在 session 内发"继续"尝试恢复
+            console.log(`[PTY] 检测到 rate limit (${session.rateLimitRetryCount}/${RATE_LIMIT_RETRY_MAX})，${session.rateLimitRetryCount < RATE_LIMIT_RETRY_MAX ? '5' : 8} 秒后发"继续" (session: ${id})`);
+            session.retryTimer = setTimeout(() => {
+              session.retryTimer = null;
+              if (!this.sessions.has(id)) return;
+              ptyProcess.write('继续\r');
+              console.log(`[PTY] 已发送"继续" (${session.rateLimitRetryCount}/${RATE_LIMIT_RETRY_MAX}) (session: ${id})`);
+            }, session.rateLimitRetryCount < RATE_LIMIT_RETRY_MAX ? 5000 : 8000);
+          } else if (session.switchAttempts >= maxAccounts) {
+            // 阶段 3: 所有账号都试过了，放弃
             const errMsg = `\n⚠️ [DuoCLI] 全部 ${maxAccounts} 个账号已耗尽，请稍后再试\n`;
             ptyProcess.write(errMsg);
             this.events.onAutoSwitchStatus?.(id, 'exhausted', `全部 ${maxAccounts} 个号已耗尽`);
-            console.log(`[PTY] 全部 ${maxAccounts} 个账号已耗尽，停止自动切号 (session: ${id})`);
+            console.log(`[PTY] 全部 ${maxAccounts} 个账号已耗尽 (session: ${id})`);
             session.switchAttempts = 0;
-            session.autoRetryCooldown = now + 60000; // 1 分钟后再允许重试
+            session.rateLimitRetryCount = 0;
+            session.autoRetryCooldown = now + 60000;
           } else if (now > session.autoRetryCooldown) {
+            // 阶段 2: 连续多次"继续"无效，走换号流程
             session.switchAttempts++;
+            session.rateLimitRetryCount = 0;
             session.lastAutoSwitchAt = now;
             session.autoRetryCooldown = now + 30000;
 
-            const statusMsg = `换号中 (${session.switchAttempts}/${maxAccounts})`;
-            this.events.onAutoSwitchStatus?.(id, 'switching', statusMsg);
-            console.log(`[PTY] 检测到硬限流，自动切号 ${session.switchAttempts}/${maxAccounts} (session: ${id})`);
+            this.events.onAutoSwitchStatus?.(id, 'switching', `换号中 (${session.switchAttempts}/${maxAccounts})`);
+            console.log(`[PTY] 连续 ${RATE_LIMIT_RETRY_MAX} 次 rate limit 未恢复，执行换号 ${session.switchAttempts}/${maxAccounts} (session: ${id})`);
 
-            // 旋转 Devin 设备指纹，防止跨账号限流关联
-            rotateDevinInstallationId();
-            const sw = spawn(sessionSyncPath, ['switch'], { stdio: 'ignore', detached: true });
-            sw.unref();
-            sw.on('close', (code) => {
+            // 1) 优雅退出当前 Devin
+            ptyProcess.write('/exit\r');
+
+            // 2) 等 3 秒让 Devin 完全退出，再执行 session-sync go（切号 + 启动新 Devin）
+            session.retryTimer = setTimeout(() => {
+              session.retryTimer = null;
               if (!this.sessions.has(id)) return;
-              if (code === 0) {
-                const doneMsg = `已切换 (${session.switchAttempts}/${maxAccounts})`;
-                this.events.onAutoSwitchStatus?.(id, 'switched', doneMsg);
-                console.log(`[PTY] 后台切号成功，3 秒后发送"继续" (session: ${id})`);
-                session.retryTimer = setTimeout(() => {
-                  session.retryTimer = null;
-                  if (!this.sessions.has(id)) return;
-                  ptyProcess.write('继续\r');
-                  // 清除冷却，允许立刻响应下一次 quota 报错（连续切号）
-                  session.autoRetryCooldown = 0;
-                  // 10 秒后如果没再触发 quota，重置计数（说明切到的号还有额度）
-                  session.retryTimer = setTimeout(() => {
-                    session.retryTimer = null;
-                    if (this.sessions.has(id)) {
-                      session.switchAttempts = 0;
-                      this.events.onAutoSwitchStatus?.(id, 'idle');
-                    }
-                  }, 10000);
-                }, 3000);
-              } else {
-                this.events.onAutoSwitchStatus?.(id, 'error', `切号失败 exit=${code}`);
-                const errMsg = `\n⚠️ [DuoCLI] 自动切号失败 (exit code: ${code})，请手动切换账号\n`;
-                ptyProcess.write(errMsg);
-                console.error(`[PTY] 后台切号失败 (exit code: ${code})`);
-                session.autoRetryCooldown = now + 30000;
-              }
-            });
-            sw.on('error', (err) => {
-              if (!this.sessions.has(id)) return;
-              this.events.onAutoSwitchStatus?.(id, 'error', err.message);
-              const errMsg = `\n⚠️ [DuoCLI] 自动切号异常: ${err.message}，请手动切换账号\n`;
-              ptyProcess.write(errMsg);
-              console.error(`[PTY] 后台切号异常:`, err.message);
-              session.autoRetryCooldown = now + 30000;
-            });
+              session.buffer = '';
+              session.rawBuffer = '';
+              session.prevData = '';
+              rotateDevinInstallationId();
+              ptyProcess.write('session-sync go\r');
+              this.events.onAutoSwitchStatus?.(id, 'switched', `已切换 (${session.switchAttempts}/${maxAccounts})`);
+              console.log(`[PTY] 已发送 session-sync go (session: ${id})`);
+
+              session.autoRetryCooldown = 0;
+              // 15 秒后如果没再触发 rate limit，重置计数
+              session.retryTimer = setTimeout(() => {
+                session.retryTimer = null;
+                if (this.sessions.has(id)) {
+                  session.switchAttempts = 0;
+                  this.events.onAutoSwitchStatus?.(id, 'idle');
+                }
+              }, 15000);
+            }, 3000);
           }
         }
-        // 2) Rate limit（软限流）→ 8 秒后自动发"继续"
-        else if (hasWarningSign && combinedLower.includes('rate limit')) {
+        // 非 rate limit 的普通警告 → 8 秒后发"继续"
+        else if (combinedLower.includes('⚠') || combinedLower.includes('something went wrong')) {
           session.prevData = '';
           if (Date.now() > session.autoRetryCooldown) {
-            console.log(`[PTY] 检测到 ⚠ Rate limit，8 秒后自动发送"继续" (session: ${id})`);
+            console.log(`[PTY] 检测到 ⚠ 警告，8 秒后发送"继续" (session: ${id})`);
             session.autoRetryCooldown = Date.now() + 10000;
             session.retryTimer = setTimeout(() => {
               session.retryTimer = null;
@@ -475,16 +530,16 @@ export class PtyManager {
   }
 
   /**
-   * 从 buffer 中提取 resume ID（关闭前的兜底，处理 resume 输出跨 chunk 的情况）
+   * 从 buffer 中提取 resume 命令（关闭前的兜底，处理 resume 输出跨 chunk 的情况）
    */
   captureResumeFromBuffer(id: string): void {
     const session = this.sessions.get(id);
     if (!session || session.resumeId) return;
     const stripped = stripTerminalControlSequences(session.buffer);
-    const match = stripped.match(/(\S+)\s+--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    if (match) {
-      session.resumeId = match[2];
-      session.resumeCommand = `${match[1]} --resume ${match[2]}`;
+    const result = parseResumeCommand(stripped);
+    if (result) {
+      session.resumeId = result.sessionId;
+      session.resumeCommand = result.command;
     }
   }
 

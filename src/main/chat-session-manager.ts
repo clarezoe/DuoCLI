@@ -113,7 +113,7 @@ export class ChatSessionManager extends EventEmitter {
     const id = `chat-${this.nextId++}`;
     const session: ChatSession = {
       id,
-      title: '新对话',
+      title: '',
       titleLocked: false,
       titleUpdateCount: 0,
       titleGenerationInFlight: false,
@@ -131,10 +131,33 @@ export class ChatSessionManager extends EventEmitter {
     return session;
   }
 
+  /** 恢复已关闭的 Chat 会话：创建新会话并预载历史消息 */
+  restore(workspace: string, model: string, messages: ChatMessage[], title?: string): ChatSession {
+    const id = `chat-${this.nextId++}`;
+    const session: ChatSession = {
+      id,
+      title: title || '',
+      titleLocked: !!title,
+      titleUpdateCount: title ? 1 : 0,
+      titleGenerationInFlight: false,
+      model: model || 'windsurf-default',
+      workspace: workspace || os.homedir(),
+      createdAt: Date.now(),
+      messages: [...messages],
+      proxySessionId: null,
+    };
+    this.sessions.set(id, session);
+
+    // 异步在 Windsurf 代理中创建会话
+    this.createProxySession(session).catch(() => {});
+
+    return session;
+  }
+
   private async createProxySession(session: ChatSession): Promise<void> {
     const payload = JSON.stringify({
       model: session.model,
-      title: session.title,
+      title: session.title || '新对话',
       workspace: session.workspace,
     });
 
@@ -586,7 +609,7 @@ export class ChatSessionManager extends EventEmitter {
     if (session.titleLocked || session.titleGenerationInFlight) return;
 
     const userMsgs = session.messages.filter(m => m.role === 'user');
-    if (userMsgs.length < 2 || userMsgs.length > 5) return;
+    if (userMsgs.length < 1 || userMsgs.length > 5) return;
 
     this.generateTitle(session).catch(() => {});
   }
@@ -618,7 +641,7 @@ export class ChatSessionManager extends EventEmitter {
         console.log('[Chat Title] No title returned from AI, using fallback');
         const firstUser = session.messages.find(m => m.role === 'user');
         if (!session.titleLocked) {
-          session.title = firstUser ? firstUser.content.slice(0, 30) : '新对话';
+          session.title = firstUser ? firstUser.content.slice(0, 30) : '';
           session.titleUpdateCount++;
           this.emit('onTitleUpdate', session.id, session.title);
         }
@@ -627,7 +650,7 @@ export class ChatSessionManager extends EventEmitter {
       console.error('[Chat Title] Title generation failed:', error);
       const firstUser = session.messages.find(m => m.role === 'user');
       if (!session.titleLocked) {
-        session.title = firstUser ? firstUser.content.slice(0, 30) : '新对话';
+        session.title = firstUser ? firstUser.content.slice(0, 30) : '';
         session.titleUpdateCount++;
         this.emit('onTitleUpdate', session.id, session.title);
       }

@@ -2043,6 +2043,23 @@ select.ai-form-input {
   color: #f44747;
 }
 
+.devin-account-actions .devin-quota-one-btn {
+  font-size: 12px;
+  padding: 1px 5px;
+  line-height: 1;
+}
+
+.devin-account-actions .devin-quota-one-btn:hover {
+  border-color: #4fc1ff;
+  color: #4fc1ff;
+}
+
+.devin-quota-all-btn {
+  font-size: 11px !important;
+  padding: 2px 10px !important;
+  background: var(--hover-bg) !important;
+}
+
 #devin-accounts-add {
   padding: 10px 14px;
   border-top: 1px solid var(--border-color);

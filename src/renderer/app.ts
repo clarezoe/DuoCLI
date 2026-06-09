@@ -49,6 +49,8 @@ declare global {
       devinAccountsRemove: (email: string) => Promise<{ ok: boolean; error?: string }>;
       devinAccountsSwitch: (opts: { email?: string; next?: boolean }) => Promise<{ ok: boolean; error?: string; email?: string; quota?: { daily: number; weekly: number } }>;
       devinAccountsQuota: () => Promise<{ ok: boolean; daily?: number; weekly?: number; planName?: string; error?: string }>;
+      devinAccountsQuotaAll: () => Promise<{ ok: boolean; results?: Array<{ email: string; ok: boolean; quota?: { daily: number; weekly: number; planName?: string }; error?: string }>; error?: string }>;
+      devinAccountsQuotaOne: (email: string) => Promise<{ ok: boolean; daily?: number; weekly?: number; planName?: string; error?: string }>;
       devinAccountsRotateDevice: () => Promise<{ ok: boolean }>;
       // 文件操作
       openFile: (filePath: string) => Promise<void>;
@@ -74,12 +76,19 @@ declare global {
       onChatError: (cb: (sessionId: string, error: string) => void) => void;
       onChatTitleUpdate: (cb: (sessionId: string, title: string) => void) => void;
       // 已关闭会话
-      closedSessionsList: () => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; displayName: string; closedAt: number }>>;
-      closedSessionsRemove: (id: string) => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; displayName: string; closedAt: number }>>;
-      closedSessionsClear: () => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; displayName: string; closedAt: number }>>;
-      onClosedSessionsUpdate: (cb: (sessions: Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; displayName: string; closedAt: number }>) => void) => void;
+      closedSessionsList: () => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
+      closedSessionsRemove: (id: string) => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
+      closedSessionsClear: () => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
+      onClosedSessionsUpdate: (cb: (sessions: Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>) => void) => void;
+      // 已关闭 Chat 会话
+      closedChatList: () => Promise<Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>>;
+      closedChatRemove: (id: string) => Promise<Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>>;
+      closedChatClear: () => Promise<Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>>;
+      chatRestore: (closedId: string) => Promise<{ id: string; title: string; model: string; workspace: string; createdAt: number } | null>;
+      onClosedChatUpdate: (cb: (sessions: Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>) => void) => void;
       // 自动切号状态
       onAutoSwitchStatus: (cb: (id: string, status: string, detail?: string) => void) => void;
+      onCloseCurrentSession: (cb: () => void) => void;
     };
   }
 }
@@ -114,11 +123,23 @@ interface ClosedSessionInfo {
   cwd: string;
   presetCommand: string;
   resumeId: string;
+  resumeCommand: string;
   displayName: string;
   closedAt: number;
 }
 let closedSessions: ClosedSessionInfo[] = [];
 let closedSessionsCollapsed = false;
+
+// ========== 已关闭 Chat 会话（可恢复） ==========
+interface ClosedChatSessionInfo {
+  id: string;
+  title: string;
+  model: string;
+  workspace: string;
+  messages: Array<{ role: string; content: string; timestamp: number }>;
+  closedAt: number;
+}
+let closedChatSessions: ClosedChatSessionInfo[] = [];
 
 // 自动切号状态：sessionId → { status, detail }
 const sessionAutoSwitchStatus: Map<string, { status: string; detail?: string }> = new Map();
@@ -872,6 +893,7 @@ const devinAccountsList = document.getElementById('devin-accounts-list')!;
 const devinCurrentLabel = document.getElementById('devin-current-label')!;
 const devinRefreshBtn = document.getElementById('devin-refresh-btn') as HTMLButtonElement;
 const devinQuotaBtn = document.getElementById('devin-quota-btn') as HTMLButtonElement;
+const devinQuotaAllBtn = document.getElementById('devin-quota-all-btn') as HTMLButtonElement;
 const devinAddEmail = document.getElementById('devin-add-email') as HTMLInputElement;
 const devinAddPassword = document.getElementById('devin-add-password') as HTMLInputElement;
 const devinAddBtn = document.getElementById('devin-add-btn') as HTMLButtonElement;
@@ -1112,7 +1134,7 @@ function updateSessionTitleBar(): void {
     const displayName = sessionDisplayNames.get(activeId) || '';
     const parts = ['DuoCLI'];
     if (displayName) parts.push(displayName);
-    if (title && title !== '新会话') parts.push(title);
+    if (title && title !== '新会话' && title !== '新对话') parts.push(title);
     window.duocli.setWindowTitle(parts.join('-'));
   } else {
     fileTreePath.textContent = '目录';
@@ -1322,14 +1344,14 @@ async function refreshFileTree(force = false): Promise<void> {
 }
 
 // 确认弹窗
-function showConfirmDialog(title: string): Promise<'close' | 'cancel'> {
+function showConfirmDialog(title: string, kind = '终端'): Promise<'close' | 'cancel'> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
     const dialog = document.createElement('div');
     dialog.className = 'confirm-dialog';
     dialog.innerHTML = `
-      <h3>关闭终端</h3>
+      <h3>关闭${kind}</h3>
       <p>确定要关闭「${title}」吗？</p>
       <div class="confirm-buttons">
         <button class="btn-cancel">取消</button>
@@ -1471,21 +1493,38 @@ function renderSessionList(): void {
     ...allIds.filter(id => !pinnedSessions.has(id)).sort(byCreated),
   ];
 
-  // 按 cwd 分组（保持排序顺序）
+  // 按 cwd 分组（组间顺序固定：按该组最早会话的创建时间排序，新建不改变组顺序）
   // 同一目录可能因末尾斜杠 / macOS /private 前缀差异被拆成多组，先归一化再分组
   const groups: Map<string, string[]> = new Map();
   const groupDisplayCwd: Map<string, string> = new Map();
+  const groupFirstCreatedAt: Map<string, number> = new Map(); // 组排序键：该组最早会话的创建时间
   for (const id of sortedIds) {
     const rawCwd = sessionCwds.get(id) || '';
     const key = normalizeCwd(rawCwd);
     if (!groups.has(key)) {
       groups.set(key, []);
       groupDisplayCwd.set(key, rawCwd);
+      // 记录该组第一个出现的会话创建时间（sortedIds 已按时间排好，第一个就是最早的）
+      groupFirstCreatedAt.set(key, getSessionCreateTime(id));
     }
     groups.get(key)!.push(id);
   }
 
-  for (const [groupKey, ids] of groups) {
+  // 组间排序：置顶组优先，其余按首个会话创建时间升序（先创建的组在上面）
+  const pinnedGroupKeys = new Set<string>();
+  for (const id of pinnedSessions) {
+    const key = normalizeCwd(sessionCwds.get(id) || '');
+    if (key) pinnedGroupKeys.add(key);
+  }
+  const sortedGroupKeys = Array.from(groups.keys()).sort((a, b) => {
+    const aPinned = pinnedGroupKeys.has(a);
+    const bPinned = pinnedGroupKeys.has(b);
+    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+    return (groupFirstCreatedAt.get(a) || 0) - (groupFirstCreatedAt.get(b) || 0);
+  });
+
+  for (const groupKey of sortedGroupKeys) {
+    const ids = groups.get(groupKey)!;
     const cwd = groupDisplayCwd.get(groupKey) || groupKey;
     const color = cwdToColor(cwd);
 
@@ -1520,8 +1559,8 @@ function renderSessionList(): void {
       const isPinned = pinnedSessions.has(id);
       const item = document.createElement('div');
       item.className = 'session-item' + (id === activeId ? ' active' : '') + (isPinned ? ' pinned' : '');
-      // 路径颜色通过 CSS 变量传递，避免内联样式覆盖 active 背景
-      item.style.setProperty('--group-color', color + '12');
+      item.dataset.sessionId = id;
+      item.dataset.sessionType = 'pty';
 
       const dot = document.createElement('span');
       dot.className = 'session-color-dot';
@@ -1663,14 +1702,16 @@ function renderSessionList(): void {
     );
 
     for (const id of sortedChatIds) {
-      const title = chatSessionTitles.get(id)!;
+      const title = chatSessionTitles.get(id)! || '';
       const item = document.createElement('div');
       item.className = 'session-item session-item-chat' + (id === activeChatId ? ' active' : '');
+      item.dataset.sessionId = id;
+      item.dataset.sessionType = 'chat';
       item.style.setProperty('--group-color', '#a78bfa12');
-
       const titleSpan = document.createElement('span');
       titleSpan.className = 'session-title chat-session-title';
-      titleSpan.textContent = title;
+      titleSpan.textContent = title || '新对话';
+      titleSpan.style.opacity = title ? '1' : '0.5';
 
       const delBtn = document.createElement('button');
       delBtn.className = 'session-close-btn';
@@ -1678,7 +1719,7 @@ function renderSessionList(): void {
       delBtn.title = '删除对话';
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        destroyChatSession(id);
+        void handleChatCloseClick(id);
       });
 
       const topRow = document.createElement('div');
@@ -1748,8 +1789,8 @@ function renderSessionList(): void {
 
         const titleSpan = document.createElement('span');
         titleSpan.className = 'session-title';
-        titleSpan.textContent = cs.title;
-        titleSpan.style.opacity = '0.7';
+        titleSpan.textContent = cs.title || '新对话';
+        titleSpan.style.opacity = cs.title ? '1' : '0.5';
 
         const metaRow = document.createElement('div');
         metaRow.className = 'session-meta-row';
@@ -1806,15 +1847,104 @@ function renderSessionList(): void {
       }
     }
   }
+
+  // ========== 已关闭 Chat 会话（可恢复） ==========
+  if (closedChatSessions.length > 0) {
+    const header = document.createElement('div');
+    header.className = 'session-group-header closed-sessions-header';
+    header.style.borderLeftColor = '#a78bfa';
+
+    const name = document.createElement('span');
+    name.className = 'session-group-name';
+    name.textContent = `💬 已关闭对话 (${closedChatSessions.length})`;
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'session-group-add-btn';
+    clearBtn.textContent = '✕';
+    clearBtn.title = '清空全部';
+    clearBtn.style.color = '#f87171';
+    clearBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closedChatSessions = await window.duocli.closedChatClear();
+      renderSessionList();
+    });
+
+    header.appendChild(name);
+    header.appendChild(clearBtn);
+    sessionList.appendChild(header);
+
+    const sorted = [...closedChatSessions].sort((a, b) => b.closedAt - a.closedAt);
+    for (const cs of sorted) {
+      const item = document.createElement('div');
+      item.className = 'session-item session-item-closed session-item-chat';
+      item.style.setProperty('--group-color', '#a78bfa12');
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'session-title chat-session-title';
+      titleSpan.textContent = cs.title || '新对话';
+      titleSpan.style.opacity = cs.title ? '1' : '0.5';
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'session-meta-row';
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'session-time';
+      timeSpan.textContent = friendlyTime(cs.closedAt);
+      metaRow.appendChild(timeSpan);
+
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'session-edit-btn';
+      restoreBtn.textContent = '↩';
+      restoreBtn.title = '恢复对话';
+      restoreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        restoreClosedChatSession(cs);
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'session-close';
+      delBtn.textContent = '×';
+      delBtn.title = '删除记录';
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        closedChatSessions = await window.duocli.closedChatRemove(cs.id);
+        renderSessionList();
+      });
+
+      const titleRow = document.createElement('div');
+      titleRow.className = 'session-title-row';
+      titleRow.appendChild(titleSpan);
+      titleRow.appendChild(restoreBtn);
+
+      const topRow = document.createElement('div');
+      topRow.className = 'session-item-top';
+      const dot = document.createElement('span');
+      dot.className = 'session-color-dot';
+      dot.style.backgroundColor = '#a78bfa';
+      topRow.appendChild(dot);
+      topRow.appendChild(titleRow);
+      topRow.appendChild(delBtn);
+
+      // 点击整个 item 也可恢复
+      item.addEventListener('click', () => {
+        restoreClosedChatSession(cs);
+      });
+
+      item.appendChild(topRow);
+      item.appendChild(metaRow);
+      sessionList.appendChild(item);
+    }
+  }
 }
 
 // ========== 核心操作 ==========
 
 // 恢复已关闭的会话
 async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
-  const resumeCmd = cs.presetCommand
-    ? `${cs.presetCommand} --resume ${cs.resumeId}`
-    : `claude --resume ${cs.resumeId}`;
+  // 优先用终端输出的完整恢复命令，兜底自己拼
+  const resumeCmd = cs.resumeCommand
+    || (cs.presetCommand
+      ? `${cs.presetCommand} --resume ${cs.resumeId}`
+      : `claude --resume ${cs.resumeId}`);
   const cwd = cs.cwd || sessionCwds.get(termManager.getActiveId() || '') || '';
   const themeId = resolveThemeId(currentThemeId, cwd);
 
@@ -1839,6 +1969,24 @@ async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
     const dims = termManager.getActiveDimensions();
     if (dims) window.duocli.resizePty(result.id, dims.cols, dims.rows);
   }, 100);
+}
+
+// 恢复已关闭的 Chat 会话
+async function restoreClosedChatSession(cs: ClosedChatSessionInfo): Promise<void> {
+  try {
+    const result = await window.duocli.chatRestore(cs.id);
+    if (!result) return;
+    const now = Date.now();
+    chatSessionTitles.set(result.id, result.title);
+    chatSessionCreateTimes.set(result.id, now);
+    // 从已关闭列表中移除
+    closedChatSessions = await window.duocli.closedChatRemove(cs.id);
+    switchToTerminal();
+    switchToChat(result.id);
+    renderSessionList();
+  } catch (e) {
+    console.error('恢复 Chat 会话失败:', e);
+  }
 }
 
 async function createSession(): Promise<boolean> {
@@ -1904,6 +2052,25 @@ async function handleCloseClick(id: string): Promise<void> {
   const action = await showConfirmDialog(title);
   if (action === 'cancel') return;
   destroySession(id);
+}
+
+async function handleChatCloseClick(id: string): Promise<void> {
+  const title = chatSessionTitles.get(id) || '新对话';
+  const action = await showConfirmDialog(title, '对话');
+  if (action === 'cancel') return;
+  destroyChatSession(id);
+}
+
+async function closeCurrentSession(): Promise<void> {
+  if (document.querySelector('.confirm-overlay')) return;
+
+  if (activeChatId) {
+    await handleChatCloseClick(activeChatId);
+    return;
+  }
+
+  const activeId = termManager.getActiveId();
+  if (activeId) await handleCloseClick(activeId);
 }
 
 // 彻底关闭终端
@@ -2628,6 +2795,16 @@ window.duocli.onClosedSessionsUpdate((sessions) => {
   renderSessionList();
 });
 
+// ========== 已关闭 Chat 会话：启动加载 + 实时更新 ==========
+window.duocli.closedChatList().then(sessions => {
+  closedChatSessions = sessions;
+  renderSessionList();
+});
+window.duocli.onClosedChatUpdate((sessions) => {
+  closedChatSessions = sessions;
+  renderSessionList();
+});
+
 // 自动切号状态监听
 window.duocli.onAutoSwitchStatus((id, status, detail) => {
   if (status === 'idle') {
@@ -2750,6 +2927,71 @@ setInterval(() => {
   if (sessionTitles.size > 0) renderSessionList();
 }, 60000);
 
+// ========== 侧边栏箭头键切换会话 ==========
+
+// 根据当前活跃会话，切换到上一个/下一个（跳过已关闭等不可导航条目）
+function navigateSession(direction: 'up' | 'down'): void {
+  const items = sessionList.querySelectorAll<HTMLElement>('.session-item');
+  if (items.length === 0) return;
+
+  // 只收集可导航的条目（有 data-session-id 的）
+  const navigable = Array.from(items).filter(el => el.dataset.sessionId);
+  if (navigable.length === 0) return;
+
+  // 找当前活跃条目在可导航列表中的索引
+  let activeIdx = -1;
+  for (let i = 0; i < navigable.length; i++) {
+    if (navigable[i].classList.contains('active')) {
+      activeIdx = i;
+      break;
+    }
+  }
+
+  // 计算目标索引
+  let targetIdx: number;
+  if (activeIdx === -1) {
+    targetIdx = direction === 'down' ? 0 : navigable.length - 1;
+  } else {
+    targetIdx = direction === 'down' ? activeIdx + 1 : activeIdx - 1;
+  }
+
+  if (targetIdx < 0 || targetIdx >= navigable.length) return;
+
+  const targetItem = navigable[targetIdx];
+  const sessionId = targetItem.dataset.sessionId!;
+  const sessionType = targetItem.dataset.sessionType;
+
+  // 触发切换
+  if (sessionType === 'chat') {
+    switchToTerminal();
+    switchToChat(sessionId);
+  } else {
+    switchSession(sessionId);
+  }
+
+  // 滚动到可见区域
+  targetItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// 在 renderSessionList 中给每个 session-item 打上 data 属性
+// （在 renderSessionList 末尾的 PTY 和 Chat 渲染处已有点击事件，
+//   这里需要在创建 DOM 时标记 sessionId 和 sessionType）
+
+// 全局键盘监听：侧边栏有焦点时拦截上下箭头
+sessionList.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    navigateSession(e.key === 'ArrowUp' ? 'up' : 'down');
+  }
+});
+
+// 让 sessionList 可以获取焦点（箭头导航的前提）
+sessionList.setAttribute('tabindex', '0');
+
+window.duocli.onCloseCurrentSession(() => {
+  void closeCurrentSession();
+});
+
 // ========== 版权信息交互 ==========
 
 // GitHub 链接
@@ -2843,6 +3085,7 @@ function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }
       <div class="devin-account-bottom">
         <span class="devin-account-meta">${escHtml(meta)}</span>
         <div class="devin-account-actions">
+          <button class="devin-quota-one-btn" title="刷新额度">&#8635;</button>
           <button class="devin-switch-btn" ${isActive ? 'disabled' : ''}>切换</button>
           <button class="devin-delete-btn">删除</button>
         </div>
@@ -2891,6 +3134,28 @@ function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }
       }
     });
 
+    // 单个账号刷新额度按钮
+    const quotaOneBtn = item.querySelector('.devin-quota-one-btn') as HTMLButtonElement;
+    quotaOneBtn.addEventListener('click', async () => {
+      quotaOneBtn.disabled = true;
+      quotaOneBtn.textContent = '...';
+      try {
+        const result = await window.duocli.devinAccountsQuotaOne(acc.email);
+        if (result.ok) {
+          quotaOneBtn.textContent = '✓';
+          await refreshDevinAccounts();
+          setTimeout(() => { quotaOneBtn.innerHTML = '&#8635;'; quotaOneBtn.disabled = false; }, 2000);
+        } else {
+          quotaOneBtn.innerHTML = '&#8635;';
+          quotaOneBtn.disabled = false;
+          alert('查询失败：' + (result.error || '未知错误'));
+        }
+      } catch {
+        quotaOneBtn.innerHTML = '&#8635;';
+        quotaOneBtn.disabled = false;
+      }
+    });
+
     devinAccountsList.appendChild(item);
   }
 }
@@ -2920,6 +3185,29 @@ devinQuotaBtn.addEventListener('click', async () => {
     devinQuotaBtn.textContent = '配额';
   } finally {
     devinQuotaBtn.disabled = false;
+  }
+});
+
+// 刷新全部额度
+devinQuotaAllBtn.addEventListener('click', async () => {
+  devinQuotaAllBtn.disabled = true;
+  devinQuotaAllBtn.textContent = '刷新中...';
+  try {
+    const result = await window.duocli.devinAccountsQuotaAll();
+    if (result.ok) {
+      const total = result.results?.length || 0;
+      const success = result.results?.filter(r => r.ok).length || 0;
+      devinQuotaAllBtn.textContent = `${success}/${total} 完成`;
+      await refreshDevinAccounts();
+      setTimeout(() => { devinQuotaAllBtn.textContent = '刷新全部额度'; }, 4000);
+    } else {
+      devinQuotaAllBtn.textContent = '失败';
+      setTimeout(() => { devinQuotaAllBtn.textContent = '刷新全部额度'; }, 2000);
+    }
+  } catch {
+    devinQuotaAllBtn.textContent = '刷新全部额度';
+  } finally {
+    devinQuotaAllBtn.disabled = false;
   }
 });
 

@@ -44,6 +44,7 @@ interface ClosedSession {
   cwd: string;
   presetCommand: string;
   resumeId: string;
+  resumeCommand: string;
   displayName: string;
   closedAt: number;
 }
@@ -64,7 +65,7 @@ function saveClosedSessions(sessions: ClosedSession[]): ClosedSession[] {
   return filtered;
 }
 
-function addClosedSession(session: { title: string; cwd: string; presetCommand: string; resumeId: string }): void {
+function addClosedSession(session: { title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string }): void {
   const list = loadClosedSessions();
   list.push({
     id: `closed-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -72,11 +73,52 @@ function addClosedSession(session: { title: string; cwd: string; presetCommand: 
     cwd: session.cwd,
     presetCommand: session.presetCommand,
     resumeId: session.resumeId,
+    resumeCommand: session.resumeCommand,
     displayName: getDisplayName(session.presetCommand),
     closedAt: Date.now(),
   });
   const saved = saveClosedSessions(list);
   safeSend('closed-sessions:update', saved);
+}
+
+// ========== 已关闭 Chat 会话持久化 ==========
+interface ClosedChatSession {
+  id: string;
+  title: string;
+  model: string;
+  workspace: string;
+  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: number }>;
+  closedAt: number;
+}
+const CLOSED_CHAT_SESSIONS_FILE = path.join(app.getPath('userData'), 'closed-chat-sessions.json');
+const MAX_CLOSED_CHAT_SESSIONS = 20;
+
+function loadClosedChatSessions(): ClosedChatSession[] {
+  try {
+    const raw = fs.readFileSync(CLOSED_CHAT_SESSIONS_FILE, 'utf-8');
+    return JSON.parse(raw);
+  } catch { return []; }
+}
+
+function saveClosedChatSessions(sessions: ClosedChatSession[]): ClosedChatSession[] {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const filtered = sessions.filter(s => s.closedAt > cutoff).slice(-MAX_CLOSED_CHAT_SESSIONS);
+  fs.writeFileSync(CLOSED_CHAT_SESSIONS_FILE, JSON.stringify(filtered, null, 2));
+  return filtered;
+}
+
+function addClosedChatSession(session: { title: string; model: string; workspace: string; messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: number }> }): void {
+  const list = loadClosedChatSessions();
+  list.push({
+    id: `closed-chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    title: session.title,
+    model: session.model,
+    workspace: session.workspace,
+    messages: session.messages,
+    closedAt: Date.now(),
+  });
+  const saved = saveClosedChatSessions(list);
+  safeSend('closed-chat-sessions:update', saved);
 }
 
 function getPreferencePath(): string {
@@ -291,6 +333,13 @@ function createWindow(appIcon?: Electron.NativeImage): void {
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if ((input.meta || input.control) && input.key.toLowerCase() === 'w') {
+      event.preventDefault();
+      mainWindow?.webContents.send('app:close-current-session');
+    }
+  });
+
   // 拦截 Command+R (macOS) 和 Ctrl+R (Windows/Linux) 防止刷新窗口
   const refreshKey = process.platform === 'darwin' ? 'Command+R' : 'Ctrl+R';
   globalShortcut.register(refreshKey, () => {
@@ -423,6 +472,7 @@ function setupPtyManager(): void {
           cwd: session.cwd,
           presetCommand: session.presetCommand,
           resumeId: session.resumeId,
+          resumeCommand: session.resumeCommand || '',
         });
       }
 
@@ -513,6 +563,7 @@ function registerIPC(): void {
         cwd: session.cwd,
         presetCommand: session.presetCommand,
         resumeId: session.resumeId,
+        resumeCommand: session.resumeCommand || '',
       });
     }
 
@@ -556,6 +607,29 @@ function registerIPC(): void {
   ipcMain.handle('closed-sessions:clear', () => {
     saveClosedSessions([]);
     return [];
+  });
+
+  // ========== 已关闭 Chat 会话 IPC ==========
+  ipcMain.handle('closed-chat:list', () => loadClosedChatSessions());
+  ipcMain.handle('closed-chat:remove', (_e, id: string) => {
+    const sessions = loadClosedChatSessions().filter(s => s.id !== id);
+    const saved = saveClosedChatSessions(sessions);
+    return saved;
+  });
+  ipcMain.handle('closed-chat:clear', () => {
+    saveClosedChatSessions([]);
+    return [];
+  });
+  ipcMain.handle('chat:restore', (_e, closedId: string) => {
+    if (!chatSessionManager) return null;
+    const list = loadClosedChatSessions();
+    const closed = list.find(s => s.id === closedId);
+    if (!closed) return null;
+    const session = chatSessionManager.restore(closed.workspace, closed.model, closed.messages, closed.title);
+    // 从已关闭列表中移除
+    const remaining = list.filter(s => s.id !== closedId);
+    saveClosedChatSessions(remaining);
+    return { id: session.id, title: session.title, model: session.model, workspace: session.workspace, createdAt: session.createdAt };
   });
 
   // 选择工作目录
@@ -984,6 +1058,27 @@ function registerIPC(): void {
     }
   });
 
+  ipcMain.handle('devin-accounts:quota-all', async () => {
+    const { code, stdout, stderr } = await runAuthCli(['quota', '--all', '--json']);
+    if (code !== 0) return { ok: false, error: stderr.trim() };
+    try {
+      const results = JSON.parse(stdout.trim());
+      return { ok: true, results };
+    } catch {
+      return { ok: false, error: '解析失败' };
+    }
+  });
+
+  ipcMain.handle('devin-accounts:quota-one', async (_e, email: string) => {
+    const { code, stdout, stderr } = await runAuthCli(['quota', '--email', email, '--json']);
+    if (code !== 0) return { ok: false, error: stderr.trim() };
+    try {
+      return { ok: true, ...JSON.parse(stdout.trim()) };
+    } catch {
+      return { ok: false, error: '解析失败' };
+    }
+  });
+
   ipcMain.handle('devin-accounts:rotate-device', () => {
     rotateDevinInstallationId();
     return { ok: true };
@@ -1065,6 +1160,16 @@ function registerIPC(): void {
   });
 
   ipcMain.handle('chat:destroy', (_e, sessionId: string) => {
+    // 保存到已关闭列表后再销毁
+    const session = chatSessionManager?.getSession(sessionId);
+    if (session && session.messages.length > 0) {
+      addClosedChatSession({
+        title: session.title,
+        model: session.model,
+        workspace: session.workspace,
+        messages: session.messages,
+      });
+    }
     chatSessionManager?.destroy(sessionId);
     return true;
   });
