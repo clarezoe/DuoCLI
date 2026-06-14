@@ -1,10 +1,10 @@
-import { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell, globalShortcut, Tray, Menu } from 'electron';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PtyManager, getDisplayName, rotateDevinInstallationId } from './pty-manager';
 import { AIConfigManager } from './ai-config';
-import { startRemoteServer, pushRawDataToRemote, sendRemotePush, addRemoteRecentCwd } from './remote-server';
+import { startRemoteServer, pushRawDataToRemote, sendRemotePush, addRemoteRecentCwd, type RemoteConnectionStatus } from './remote-server';
 import { CloudflaredManager } from './cloudflared-manager';
 import { ChatSessionManager } from './chat-session-manager';
 import { WindsurfProxyManager } from './windsurf-proxy-manager';
@@ -296,7 +296,98 @@ const aiConfigManager = new AIConfigManager();
 let cloudflaredManager: CloudflaredManager | null = null;
 let chatSessionManager: ChatSessionManager | null = null;
 let windsurfProxyManager: WindsurfProxyManager | null = null;
-let cachedRemoteServerInfo: any = null;
+let cachedRemoteServerInfo: RemoteServerInfoWithTunnel | null = null;
+let tray: Tray | null = null;
+let currentAppIcon: Electron.NativeImage | undefined;
+
+type RemoteServerInfoWithTunnel = RemoteConnectionStatus & {
+  publicUrl?: string;
+  tunnel?: unknown;
+};
+
+type TrayState = {
+  isOnline: boolean;
+  lanUrl: string | null;
+  publicUrl: string | null;
+  port: number | null;
+  connectedClients: number;
+  subscribedSessions: number;
+};
+
+const trayState: TrayState = {
+  isOnline: false,
+  lanUrl: null,
+  publicUrl: null,
+  port: null,
+  connectedClients: 0,
+  subscribedSessions: 0,
+};
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow(currentAppIcon);
+  }
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function copyRemoteUrl(): void {
+  const url = trayState.publicUrl || trayState.lanUrl;
+  if (url) clipboard.writeText(url);
+}
+
+function createTrayIcon(): Electron.NativeImage {
+  const icon = currentAppIcon || nativeImage.createEmpty();
+  if (icon.isEmpty()) return icon;
+  const resizedIcon = icon.resize({ width: 16, height: 16 });
+  resizedIcon.setTemplateImage(process.platform === 'darwin');
+  return resizedIcon;
+}
+
+function updateTray(): void {
+  if (!tray) return;
+  const statusText = trayState.isOnline ? 'Online' : 'Starting';
+  const clientText = `${trayState.connectedClients} remote client${trayState.connectedClients === 1 ? '' : 's'}`;
+  const title = trayState.isOnline
+    ? `DuoCLI ${trayState.connectedClients > 0 ? trayState.connectedClients : '●'}`
+    : 'DuoCLI …';
+  tray.setTitle(title);
+  tray.setToolTip(`DuoCLI Remote: ${statusText}${trayState.lanUrl ? `\n${trayState.lanUrl}` : ''}\n${clientText}`);
+
+  const url = trayState.publicUrl || trayState.lanUrl;
+  const menu = Menu.buildFromTemplate([
+    { label: `Remote: ${statusText}`, enabled: false },
+    { label: `Clients: ${trayState.connectedClients}`, enabled: false },
+    { label: `Subscribed sessions: ${trayState.subscribedSessions}`, enabled: false },
+    { label: trayState.lanUrl ? `LAN: ${trayState.lanUrl}` : 'LAN: starting…', enabled: false },
+    ...(trayState.publicUrl ? [{ label: `Public: ${trayState.publicUrl}`, enabled: false }] : []),
+    { type: 'separator' },
+    { label: 'Open DuoCLI', click: showMainWindow },
+    { label: 'Copy Remote URL', enabled: Boolean(url), click: copyRemoteUrl },
+    { label: 'Open Remote URL', enabled: Boolean(url), click: () => { if (url) shell.openExternal(url); } },
+    { type: 'separator' },
+    { label: 'Quit DuoCLI', click: () => app.quit() },
+  ]);
+  tray.setContextMenu(menu);
+}
+
+function createTray(): void {
+  if (tray) return;
+  tray = new Tray(createTrayIcon());
+  tray.on('click', showMainWindow);
+  updateTray();
+}
+
+function updateRemoteTrayStatus(status: RemoteConnectionStatus): void {
+  trayState.isOnline = true;
+  trayState.lanUrl = status.lanUrl;
+  trayState.port = status.port;
+  trayState.connectedClients = status.connectedClients;
+  trayState.subscribedSessions = status.subscribedSessions;
+  updateTray();
+}
 
 function loadAppIcon(): Electron.NativeImage | undefined {
   // macOS 打包后用 .icns，开发模式用 .png
@@ -365,6 +456,10 @@ function createWindow(appIcon?: Electron.NativeImage): void {
         mainWindow?.close();
       }
     });
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
 }
 
@@ -1210,11 +1305,13 @@ app.whenReady().then(async () => {
 
   // macOS Dock 图标 — 在窗口创建前设置
   const appIcon = loadAppIcon();
+  currentAppIcon = appIcon;
   if (appIcon) {
     if (process.platform === 'darwin' && app.dock) {
       app.dock.setIcon(appIcon);
     }
   }
+  createTray();
 
   // 自动启动 Windsurf 代理
   windsurfProxyManager = new WindsurfProxyManager((running, error) => {
@@ -1269,13 +1366,28 @@ app.whenReady().then(async () => {
   }, (info) => {
     // 服务器启动后，把连接信息发送给渲染进程显示
     const tunnel = cloudflaredManager?.start();
-    const serverInfo = {
+    const serverInfo: RemoteServerInfoWithTunnel = {
       ...info,
+      connectedClients: trayState.connectedClients,
+      subscribedSessions: trayState.subscribedSessions,
       publicUrl: tunnel?.url || undefined,
       tunnel,
     };
     cachedRemoteServerInfo = serverInfo;
+    trayState.isOnline = true;
+    trayState.lanUrl = serverInfo.lanUrl;
+    trayState.publicUrl = serverInfo.publicUrl || null;
+    trayState.port = serverInfo.port;
+    updateTray();
     safeSend('remote:server-info', serverInfo);
+  }, (status) => {
+    updateRemoteTrayStatus(status);
+    if (cachedRemoteServerInfo) {
+      cachedRemoteServerInfo = {
+        ...cachedRemoteServerInfo,
+        ...status,
+      };
+    }
   });
 
   // AI 配置已保存在偏好文件中，无需额外恢复
@@ -1283,12 +1395,14 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    createWindow(currentAppIcon);
   }
 });
 
@@ -1296,4 +1410,6 @@ app.on('before-quit', async () => {
   globalShortcut.unregisterAll();
   cloudflaredManager?.stopOwnedProcess();
   windsurfProxyManager?.destroy();
+  tray?.destroy();
+  tray = null;
 });

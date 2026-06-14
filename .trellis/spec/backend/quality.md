@@ -153,6 +153,74 @@ export default defineConfig({
 
 ---
 
+## Main Process Menu Bar Status Contracts
+
+### 1. Scope / Trigger
+- Trigger: adding macOS menu bar state for services owned by the Electron main process.
+- Apply when a background service needs to show live status outside the renderer window.
+
+### 2. Signatures
+```typescript
+export type RemoteServerInfo = {
+  lanUrl: string;
+  token: string;
+  port: number;
+};
+
+export type RemoteConnectionStatus = RemoteServerInfo & {
+  connectedClients: number;
+  subscribedSessions: number;
+};
+
+startRemoteServer(
+  ptyManager,
+  onRemoteCreate,
+  onRemoteDestroy,
+  onServerStarted,
+  onConnectionStatusChanged,
+);
+```
+
+### 3. Contracts
+- `onServerStarted` fires once the HTTP server is listening and returns the stable connection fields.
+- `onConnectionStatusChanged` fires after authorized WebSocket connect, subscribe, and close events.
+- The main process owns tray state and must not depend on renderer readiness for menu bar updates.
+- Tray actions that expose URLs must prefer public tunnel URL when present and fall back to LAN URL.
+
+### 4. Validation & Error Matrix
+| Case | Expected behavior |
+| --- | --- |
+| Server not started | Tray shows starting/offline state and URL actions disabled. |
+| Server started, no clients | Tray shows online state and zero clients. |
+| Authorized WebSocket connects | Connected client count increments. |
+| Client subscribes to a session | Subscribed session count updates. |
+| Client disconnects | Counts decrement without requiring renderer IPC. |
+
+### 5. Good/Base/Bad Cases
+- Good: service module exports typed status payloads and invokes a callback on state transitions.
+- Base: tray initializes before the remote server starts and updates when callbacks arrive.
+- Bad: tray polls renderer state or reads private WebSocket maps from another module.
+
+### 6. Tests Required
+- Run `npm run build:ts` for type contract validation.
+- Run a timed `npm start` smoke test and assert the remote server starts without tray initialization errors.
+- Manually connect a mobile/remote client when changing WebSocket status logic and verify client count changes.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+// Polling renderer state from the main process couples tray updates to window readiness.
+setInterval(() => mainWindow?.webContents.send('remote:get-status'), 1000);
+```
+
+#### Correct
+```typescript
+// Service-owned state changes push typed updates to the main process tray owner.
+startRemoteServer(ptyManager, onCreate, onDestroy, onStarted, updateRemoteTrayStatus);
+```
+
+---
+
 ## Testing Guidelines
 
 ### Test Coverage Requirements

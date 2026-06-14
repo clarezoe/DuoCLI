@@ -16,6 +16,17 @@ import sharp from 'sharp';
 import { PtyManager, getDisplayName } from './pty-manager';
 import { ChatSessionManager } from './chat-session-manager';
 
+export type RemoteServerInfo = {
+  lanUrl: string;
+  token: string;
+  port: number;
+};
+
+export type RemoteConnectionStatus = RemoteServerInfo & {
+  connectedClients: number;
+  subscribedSessions: number;
+};
+
 // 缓存 ptyManager 和回调供远程创建使用（在 startRemoteServer 中设置）
 let cachedPtyManager: PtyManager | null = null;
 let cachedOnRemoteCreate: ((sessionInfo: any) => void) | null = null;
@@ -230,7 +241,8 @@ export function startRemoteServer(
   ptyManager: PtyManager,
   onRemoteCreate?: (sessionInfo: any) => void,
   onRemoteDestroy?: (id: string) => void,
-  onServerStarted?: (info: { lanUrl: string; token: string; port: number }) => void,
+  onServerStarted?: (info: RemoteServerInfo) => void,
+  onConnectionStatusChanged?: (status: RemoteConnectionStatus) => void,
 ): void {
   // 缓存供 Bridge 事件使用
   cachedPtyManager = ptyManager;
@@ -280,6 +292,30 @@ export function startRemoteServer(
   const wsClients = new Map<string, Set<WebSocket>>();
   type AliveWebSocket = WebSocket & { isAlive?: boolean };
 
+  const getConnectionStatus = (): RemoteConnectionStatus => {
+    let connectedClients = 0;
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) connectedClients += 1;
+    }
+    let subscribedSessions = 0;
+    for (const clients of wsClients.values()) {
+      if (clients.size > 0) subscribedSessions += 1;
+    }
+    return {
+      lanUrl: `http://${LOCAL_IP}:${PORT}`,
+      token: config.token,
+      port: PORT,
+      connectedClients,
+      subscribedSessions,
+    };
+  };
+
+  const notifyConnectionStatusChanged = (): void => {
+    if (onConnectionStatusChanged) {
+      onConnectionStatusChanged(getConnectionStatus());
+    }
+  };
+
   // WS 层心跳：清理半开连接，避免弱网下“假在线”导致客户端一直卡重连
   const wsHeartbeatTimer = setInterval(() => {
     wss.clients.forEach((client) => {
@@ -311,6 +347,8 @@ export function startRemoteServer(
       return;
     }
 
+    notifyConnectionStatusChanged();
+
     let subscribedSession: string | null = null;
 
     ws.on('message', (msg) => {
@@ -321,7 +359,9 @@ export function startRemoteServer(
           if (subscribedSession) wsClients.get(subscribedSession)?.delete(ws);
           subscribedSession = data.sessionId;
           if (!wsClients.has(data.sessionId)) wsClients.set(data.sessionId, new Set());
-          wsClients.get(data.sessionId)!.add(ws);
+          const sessionClients = wsClients.get(data.sessionId);
+          if (sessionClients) sessionClients.add(ws);
+          notifyConnectionStatusChanged();
 
           // 回放历史 buffer（始终发送 replay，即使 rawBuffer 为空，让客户端知道订阅已生效）
           const session = ptyManager.getSession(data.sessionId);
@@ -352,6 +392,7 @@ export function startRemoteServer(
 
     ws.on('close', () => {
       if (subscribedSession) wsClients.get(subscribedSession)?.delete(ws);
+      notifyConnectionStatusChanged();
     });
   });
 
@@ -918,7 +959,9 @@ export function startRemoteServer(
           const lanUrl = `http://${LOCAL_IP}:${PORT}`;
           console.log('[RemoteServer] Server started (retry), URL:', lanUrl);
           if (onServerStarted) {
-            onServerStarted({ lanUrl, token: config.token, port: PORT });
+            const serverInfo = { lanUrl, token: config.token, port: PORT };
+            onServerStarted(serverInfo);
+            notifyConnectionStatusChanged();
           }
         });
       }, 500);
@@ -930,7 +973,9 @@ export function startRemoteServer(
     console.log('[RemoteServer] Server started, URL:', lanUrl);
     // 通过回调返回连接信息，不再输出到终端
     if (onServerStarted) {
-      onServerStarted({ lanUrl, token: config.token, port: PORT });
+      const serverInfo = { lanUrl, token: config.token, port: PORT };
+      onServerStarted(serverInfo);
+      notifyConnectionStatusChanged();
     }
   });
 }
