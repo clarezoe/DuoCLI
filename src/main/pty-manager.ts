@@ -514,6 +514,12 @@ export class PtyManager {
     this.events.onTitleUpdate(id, title);
   }
 
+  setProvider(id: string, provider: string | null): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    session.provider = provider;
+  }
+
   /**
    * 强制重新用 AI 生成标题。用户右键"重新生成标题"调用。
    * 会清掉 lock/generated 标记，再走一次 AI；失败则保持原标题。

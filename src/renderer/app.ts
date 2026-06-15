@@ -3,24 +3,36 @@ import { ChatView } from './chat-view';
 
 let remoteServerInfo: { lanUrl: string; token: string; port: number; publicUrl?: string; tunnel?: { running: boolean; url: string; message?: string } } | null = null;
 
+type OpenEditorResult = { ok: true } | { ok: false; error: string };
+
+type PtySessionInfo = {
+  id: string;
+  title: string;
+  themeId: string;
+  cwd: string;
+  displayName: string;
+  provider?: string | null;
+  rawBuffer?: string;
+};
+
 declare global {
   interface Window {
     duocli: {
       setWindowTitle: (title: string) => void;
-      createPty: (cwd: string, presetCommand: string, themeId: string) => Promise<{ id: string; title: string; themeId: string; cwd: string; displayName: string }>;
+      createPty: (cwd: string, presetCommand: string, themeId: string) => Promise<PtySessionInfo>;
       writePty: (id: string, data: string) => void;
       resizePty: (id: string, cols: number, rows: number) => void;
       destroyPty: (id: string) => void;
       renamePty: (id: string, title: string) => void;
       regenerateTitle: (id: string) => Promise<void>;
-      getSessions: () => Promise<Array<{ id: string; title: string; themeId: string; cwd: string; displayName: string }>>;
+      getSessions: () => Promise<PtySessionInfo[]>;
       selectFolder: (currentPath?: string) => Promise<string | null>;
       fileTreeListDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDir: boolean }>>;
       remoteAddRecentCwd: (cwd: string) => Promise<boolean>;
       onPtyData: (cb: (id: string, data: string) => void) => void;
       onTitleUpdate: (cb: (id: string, title: string) => void) => void;
       onPtyExit: (cb: (id: string) => void) => void;
-      onRemoteCreated: (cb: (sessionInfo: { id: string; title: string; themeId: string; cwd: string; displayName: string }) => void) => void;
+      onRemoteCreated: (cb: (sessionInfo: PtySessionInfo) => void) => void;
       onRemoteServerInfo: (cb: (info: { lanUrl: string; token: string; port: number; publicUrl?: string; tunnel?: { running: boolean; url: string; message?: string } }) => void) => void;
       getRemoteServerInfo: () => Promise<{ lanUrl: string; token: string; port: number; publicUrl?: string; tunnel?: { running: boolean; url: string; message?: string } } | null>;
       clipboardSaveImage: () => Promise<string | null>;
@@ -28,7 +40,7 @@ declare global {
       // 文件监听 API
       filewatcherStart: (cwd: string) => Promise<void>;
       filewatcherStop: () => Promise<void>;
-      filewatcherOpen: (filePath: string) => Promise<void>;
+      filewatcherOpen: (filePath: string) => Promise<OpenEditorResult>;
       filewatcherSelectEditor: () => Promise<string | null>;
       filewatcherGetEditor: () => Promise<string | null>;
       openFolder: (folderPath: string) => Promise<void>;
@@ -1941,6 +1953,20 @@ function renderSessionList(): void {
 
 // ========== 核心操作 ==========
 
+function attachPtySession(info: PtySessionInfo, createdAt: number, replayRawBuffer = false): void {
+  sessionTitles.set(info.id, info.title);
+  sessionThemes.set(info.id, info.themeId);
+  sessionUpdateTimes.set(info.id, createdAt);
+  sessionCreateTimes.set(info.id, createdAt);
+  sessionCwds.set(info.id, info.cwd);
+  sessionDisplayNames.set(info.id, info.displayName);
+  if (info.provider) sessionProviders.set(info.id, info.provider);
+  termManager.create(info.id, info.themeId, info.cwd, (data) => { writePtyWithAutoReset(info.id, data); });
+  if (replayRawBuffer && info.rawBuffer) {
+    termManager.write(info.id, info.rawBuffer);
+  }
+}
+
 // 恢复已关闭的会话
 async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
   // 优先用终端输出的完整恢复命令，兜底自己拼
@@ -1953,13 +1979,7 @@ async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
 
   const result = await window.duocli.createPty(cwd, resumeCmd, themeId);
   const now = Date.now();
-  sessionTitles.set(result.id, cs.title);
-  sessionThemes.set(result.id, result.themeId);
-  sessionUpdateTimes.set(result.id, now);
-  sessionCreateTimes.set(result.id, now);
-  sessionCwds.set(result.id, result.cwd);
-  sessionDisplayNames.set(result.id, cs.displayName || result.displayName);
-  termManager.create(result.id, result.themeId, cwd, (data) => { writePtyWithAutoReset(result.id, data); });
+  attachPtySession({ ...result, title: cs.title, displayName: cs.displayName || result.displayName }, now);
 
   // 从已关闭列表中移除
   closedSessions = await window.duocli.closedSessionsRemove(cs.id);
@@ -1993,7 +2013,14 @@ async function restoreClosedChatSession(cs: ClosedChatSessionInfo): Promise<void
 }
 
 async function createSession(): Promise<boolean> {
-  if (!currentCwd) { alert('请先选择工作目录'); return false; }
+  if (!currentCwd) {
+    await browseCwd();
+    if (!currentCwd) {
+      newSessionCreateBtn.textContent = '请选择工作目录';
+      setTimeout(() => { newSessionCreateBtn.textContent = '创建终端'; }, 1500);
+      return false;
+    }
+  }
 
   addRecentCwd(currentCwd);
   const preset = presetSelect.value;
@@ -2002,12 +2029,7 @@ async function createSession(): Promise<boolean> {
   localStorage.setItem('duocli_preset', preset);
   const result = await window.duocli.createPty(currentCwd, preset, themeId);
   const now = Date.now();
-  sessionTitles.set(result.id, result.title);
-  sessionThemes.set(result.id, result.themeId);
-  sessionUpdateTimes.set(result.id, now);
-  sessionCreateTimes.set(result.id, now);
-  sessionCwds.set(result.id, result.cwd);
-  sessionDisplayNames.set(result.id, result.displayName);
+  attachPtySession(result, now);
   // 自定义预设：用用户定义的名称覆盖后端 fallback
   const customPreset = getCustomPresets().find(p =>
     preset === p.command || (p.autoFlag && preset === p.command + ' ' + p.autoFlag)
@@ -2017,8 +2039,6 @@ async function createSession(): Promise<boolean> {
     const displayName = isAuto ? customPreset.name + '全自动' : customPreset.name;
     sessionDisplayNames.set(result.id, displayName);
   }
-  // 初始化终端
-  termManager.create(result.id, result.themeId, currentCwd, (data) => { writePtyWithAutoReset(result.id, data); });
   updateEmptyState();
   renderSessionList();
   updateSessionTitleBar();
@@ -2193,14 +2213,26 @@ function destroyChatSession(id: string): void {
 }
 
 async function browseCwd(): Promise<void> {
-  const folder = await window.duocli.selectFolder(currentCwd || undefined);
-  if (folder) {
-    currentCwd = folder;
-    cwdInput.value = folder;
-    localStorage.setItem('duocli_cwd', folder);
-    addRecentCwd(folder);
-    startFileWatcher(folder);
-    void renderFileTree();
+  cwdBrowseBtn.textContent = '选择中...';
+  cwdBrowseBtn.setAttribute('disabled', 'true');
+  try {
+    const folder = await window.duocli.selectFolder(currentCwd || undefined);
+    if (folder) {
+      currentCwd = folder;
+      cwdInput.value = folder;
+      localStorage.setItem('duocli_cwd', folder);
+      addRecentCwd(folder);
+      startFileWatcher(folder);
+      void renderFileTree();
+    }
+  } catch (error) {
+    console.error('选择工作目录失败:', error);
+    cwdBrowseBtn.textContent = '选择失败';
+    setTimeout(() => { cwdBrowseBtn.textContent = '浏览'; }, 1500);
+    return;
+  } finally {
+    cwdBrowseBtn.removeAttribute('disabled');
+    if (cwdBrowseBtn.textContent === '选择中...') cwdBrowseBtn.textContent = '浏览';
   }
 }
 
@@ -2737,15 +2769,9 @@ window.duocli.onPtyExit((id) => {
 
 // 手机端远程创建了会话，桌面端同步显示
 window.duocli.onRemoteCreated((info) => {
+  if (sessionTitles.has(info.id)) return;
   const now = Date.now();
-  sessionTitles.set(info.id, info.title);
-  sessionThemes.set(info.id, info.themeId);
-  sessionUpdateTimes.set(info.id, now);
-  sessionCreateTimes.set(info.id, now);
-  sessionCwds.set(info.id, info.cwd);
-  sessionDisplayNames.set(info.id, info.displayName);
-  // 创建 xterm 实例（桌面端也能看到和操作）
-  termManager.create(info.id, info.themeId, info.cwd, (data) => { writePtyWithAutoReset(info.id, data); });
+  attachPtySession(info, now);
   updateEmptyState();
   renderSessionList();
   updateSessionTitleBar();
@@ -2755,6 +2781,30 @@ window.duocli.onRemoteCreated((info) => {
     if (dims) window.duocli.resizePty(info.id, dims.cols, dims.rows);
   }, 100);
 });
+
+async function restoreDaemonSessions(): Promise<void> {
+  try {
+    const sessions = await window.duocli.getSessions();
+    const now = Date.now();
+    for (const info of sessions) {
+      if (sessionTitles.has(info.id)) continue;
+      attachPtySession(info, now, true);
+    }
+    updateEmptyState();
+    renderSessionList();
+    updateSessionTitleBar();
+    void renderFileTree();
+    setTimeout(() => {
+      const activeId = termManager.getActiveId();
+      const dims = termManager.getActiveDimensions();
+      if (activeId && dims) window.duocli.resizePty(activeId, dims.cols, dims.rows);
+    }, 100);
+  } catch (error) {
+    console.error('[Renderer] Failed to restore PTY daemon sessions:', error);
+  }
+}
+
+void restoreDaemonSessions();
 
 // 远程服务器信息处理：合并推送/拉取预设
 async function handleRemoteServerInfo(info: typeof remoteServerInfo) {

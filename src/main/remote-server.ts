@@ -13,7 +13,8 @@ const ADB = resolveAdb();
 import { WebSocketServer, WebSocket } from 'ws';
 import webpush from 'web-push';
 import sharp from 'sharp';
-import { PtyManager, getDisplayName } from './pty-manager';
+import { getDisplayName } from './pty-manager';
+import { PtyBackend, PtySessionSnapshot } from './pty-backend';
 import { ChatSessionManager } from './chat-session-manager';
 
 export type RemoteServerInfo = {
@@ -28,7 +29,7 @@ export type RemoteConnectionStatus = RemoteServerInfo & {
 };
 
 // 缓存 ptyManager 和回调供远程创建使用（在 startRemoteServer 中设置）
-let cachedPtyManager: PtyManager | null = null;
+let cachedPtyManager: PtyBackend | null = null;
 let cachedOnRemoteCreate: ((sessionInfo: any) => void) | null = null;
 
 // 根据 preset 命令获取实际使用的模型提供商（与 index.ts 保持一致）
@@ -242,7 +243,7 @@ function addRecentCwdInConfig(config: RemoteConfig, cwd: string): void {
  * @param onServerStarted 服务器启动后的回调，用于返回连接信息（IP、端口、Token）
  */
 export function startRemoteServer(
-  ptyManager: PtyManager,
+  ptyManager: PtyBackend,
   onRemoteCreate?: (sessionInfo: any) => void,
   onRemoteDestroy?: (id: string) => void,
   onServerStarted?: (info: RemoteServerInfo) => void,
@@ -356,6 +357,7 @@ export function startRemoteServer(
     let subscribedSession: string | null = null;
 
     ws.on('message', (msg) => {
+      void (async () => {
       try {
         const data = JSON.parse(msg.toString());
 
@@ -368,23 +370,23 @@ export function startRemoteServer(
           notifyConnectionStatusChanged();
 
           // 回放历史 buffer（始终发送 replay，即使 rawBuffer 为空，让客户端知道订阅已生效）
-          const session = ptyManager.getSession(data.sessionId);
-          ws.send(JSON.stringify({ type: 'replay', data: session?.rawBuffer || '' }));
+          const rawBuffer = await ptyManager.getRawBuffer(data.sessionId).catch(() => '');
+          ws.send(JSON.stringify({ type: 'replay', data: rawBuffer }));
         }
 
         if (data.type === 'input' && subscribedSession) {
-          ptyManager.write(subscribedSession, data.data);
+          await ptyManager.write(subscribedSession, data.data);
         }
 
         // base64 编码的 input，解码后写入 pty（避免控制字符在 JSON 传输中丢失）
         if (data.type === 'input_b64' && subscribedSession && typeof data.data === 'string') {
           const decoded = Buffer.from(data.data, 'base64').toString('utf-8');
-          ptyManager.write(subscribedSession, decoded);
+          await ptyManager.write(subscribedSession, decoded);
         }
 
         // 手机端 resize — 同步调整 pty 尺寸，让输出按手机列数排版
         if (data.type === 'resize' && subscribedSession && data.cols && data.rows) {
-          ptyManager.resize(subscribedSession, data.cols, data.rows);
+          await ptyManager.resize(subscribedSession, data.cols, data.rows);
         }
 
         // 心跳 ping，忽略即可
@@ -392,6 +394,7 @@ export function startRemoteServer(
           ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
         }
       } catch {}
+      })();
     });
 
     ws.on('close', () => {
@@ -519,13 +522,13 @@ export function startRemoteServer(
   });
 
   // 获取会话的 UI 状态（busy/unread/idle），由 renderer 同步到 main
-  function getSessionStatus(id: string, ptyProcess: any): string {
-    if (ptyProcess.exitState) return 'exited';
+  function getSessionStatus(id: string, exitState?: unknown): string {
+    if (exitState) return 'exited';
     const statuses = (global as any).__sessionStatuses || {};
     return statuses[id] || 'idle';
   }
 
-  function mapSessionToApi(s: any) {
+  function mapSessionToApi(s: PtySessionSnapshot) {
     return {
       id: s.id,
       title: s.title,
@@ -533,7 +536,7 @@ export function startRemoteServer(
       presetCommand: s.presetCommand,
       displayName: resolveSessionDisplayName(s.presetCommand, config.customPresets),
       provider: s.provider || getCliProvider(s.presetCommand),
-      status: getSessionStatus(s.id, s.ptyProcess),
+      status: getSessionStatus(s.id, s.exitState),
       createdAt: s.createdAt || Date.now(),
     };
   }
@@ -557,11 +560,11 @@ export function startRemoteServer(
   });
 
   // 创建会话 — 通过 ptyManager 创建，通知桌面端
-  app.post('/api/sessions', (req, res) => {
+  app.post('/api/sessions', async (req, res) => {
     const { cwd, presetCommand, themeId, providerEnv } = req.body;
     const targetCwd = cwd || process.env.HOME || os.homedir();
     try {
-      const session = ptyManager.create(
+      const session = await ptyManager.create(
         targetCwd,
         presetCommand || '',
         typeof themeId === 'string' && themeId ? themeId : 'default',
@@ -584,19 +587,19 @@ export function startRemoteServer(
   });
 
   // 输入
-  app.post('/api/sessions/:id/input', (req, res) => {
+  app.post('/api/sessions/:id/input', async (req, res) => {
     const { input } = req.body;
     if (typeof input !== 'string') { res.status(400).json({ error: '缺少 input' }); return; }
     const data = input.endsWith('\r') || input.endsWith('\n') ? input : input + '\r';
-    ptyManager.write(req.params.id, data);
+    await ptyManager.write(req.params.id, data);
     res.json({ ok: true });
   });
 
   // 原始键码
-  app.post('/api/sessions/:id/key', (req, res) => {
+  app.post('/api/sessions/:id/key', async (req, res) => {
     const { key } = req.body;
     if (typeof key !== 'string') { res.status(400).json({ error: '缺少 key' }); return; }
-    ptyManager.write(req.params.id, key);
+    await ptyManager.write(req.params.id, key);
     res.json({ ok: true });
   });
 
@@ -625,7 +628,7 @@ export function startRemoteServer(
   });
 
   // 重命名会话标题
-  app.put('/api/sessions/:id/title', (req, res) => {
+  app.put('/api/sessions/:id/title', async (req, res) => {
     const { title } = req.body;
     if (typeof title !== 'string' || !title.trim()) {
       res.status(400).json({ error: '缺少 title' });
@@ -633,13 +636,13 @@ export function startRemoteServer(
     }
     const session = ptyManager.getSession(req.params.id);
     if (!session) { res.status(404).json({ error: '会话不存在' }); return; }
-    ptyManager.rename(req.params.id, title.trim());
+    await ptyManager.rename(req.params.id, title.trim());
     res.json({ ok: true });
   });
 
   // 删除会话
-  app.delete('/api/sessions/:id', (req, res) => {
-    ptyManager.destroy(req.params.id);
+  app.delete('/api/sessions/:id', async (req, res) => {
+    await ptyManager.destroy(req.params.id);
     onRemoteDestroy?.(req.params.id);
     res.json({ ok: true });
   });

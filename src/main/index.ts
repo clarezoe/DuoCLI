@@ -2,12 +2,16 @@ import { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell, glo
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { PtyManager, getDisplayName, rotateDevinInstallationId } from './pty-manager';
+import { getDisplayName, rotateDevinInstallationId } from './pty-manager';
+import { PtyBackend } from './pty-backend';
+import { PtyDaemonClient } from './pty-daemon-client';
 import { AIConfigManager } from './ai-config';
 import { startRemoteServer, pushRawDataToRemote, sendRemotePush, addRemoteRecentCwd, type RemoteConnectionStatus } from './remote-server';
 import { CloudflaredManager } from './cloudflared-manager';
 import { ChatSessionManager } from './chat-session-manager';
 import { WindsurfProxyManager } from './windsurf-proxy-manager';
+
+type OpenEditorResult = { ok: true } | { ok: false; error: string };
 
 // macOS: 设置为普通应用模式，显示在 Dock 和 Command+Tab 切换器中
 if (process.platform === 'darwin') {
@@ -180,6 +184,64 @@ function loadEditorPreference(): string | null {
   } catch { return null; }
 }
 
+function expandUserPath(filePath: string): string {
+  if (filePath === '~') return os.homedir();
+  if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
+
+function spawnEditorCommand(command: string, args: string[]): Promise<OpenEditorResult> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: 'ignore', detached: true });
+    let settled = false;
+    const settle = (result: OpenEditorResult): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    child.on('error', (error) => {
+      settle({ ok: false, error: error.message });
+    });
+    child.on('spawn', () => {
+      child.unref();
+      setTimeout(() => {
+        settle({ ok: true });
+      }, 500);
+    });
+    child.on('exit', (code) => {
+      if (code === 0 || code === null) {
+        settle({ ok: true });
+      } else {
+        settle({ ok: false, error: `${command} exited with code ${code}` });
+      }
+    });
+  });
+}
+
+async function openFileInEditor(filePath: string): Promise<OpenEditorResult> {
+  const targetPath = expandUserPath(filePath);
+  const editor = loadEditorPreference();
+  if (editor) {
+    if (process.platform === 'win32') {
+      return spawnEditorCommand(editor, [targetPath]);
+    }
+    if (process.platform === 'darwin') {
+      return spawnEditorCommand('open', ['-a', editor, targetPath]);
+    }
+    return spawnEditorCommand(editor, [targetPath]);
+  }
+
+  if (process.platform === 'darwin') {
+    return spawnEditorCommand('open', ['-t', targetPath]);
+  }
+
+  const error = await shell.openPath(targetPath);
+  return error ? { ok: false, error } : { ok: true };
+}
+
 // ========== CLI 模型提供商检测 ==========
 
 // 根据 preset 命令获取实际使用的模型提供商
@@ -295,7 +357,7 @@ function parseShellExports(content: string): Map<string, string> {
 }
 
 let mainWindow: BrowserWindow | null = null;
-let ptyManager: PtyManager;
+let ptyManager: PtyBackend;
 const aiConfigManager = new AIConfigManager();
 let cloudflaredManager: CloudflaredManager | null = null;
 let chatSessionManager: ChatSessionManager | null = null;
@@ -441,27 +503,6 @@ function createWindow(appIcon?: Electron.NativeImage): void {
     // 不做任何操作，阻止默认刷新行为
   });
 
-  // 关闭窗口时，如果有活跃终端则弹确认
-  mainWindow.on('close', (e) => {
-    const sessions = ptyManager.getAllSessions();
-    if (sessions.length === 0 || !mainWindow) return;
-    e.preventDefault();
-    dialog.showMessageBox(mainWindow, {
-      type: 'warning',
-      title: '关闭 DuoCLI',
-      message: `当前有 ${sessions.length} 个终端正在运行`,
-      detail: '关闭应用后所有终端进程都会被终止，确定要关闭吗？',
-      buttons: ['取消', '关闭'],
-      defaultId: 0,
-      cancelId: 0,
-    }).then(({ response }) => {
-      if (response === 1) {
-        mainWindow?.removeAllListeners('close');
-        mainWindow?.close();
-      }
-    });
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -547,8 +588,8 @@ function maybeNotifyAttention(id: string, data: string): void {
   sessionArmedForNotify.delete(id);
 }
 
-function setupPtyManager(): void {
-  ptyManager = new PtyManager({
+async function setupPtyManager(): Promise<void> {
+  ptyManager = await PtyDaemonClient.connect({
     onData: (id, data) => {
       safeSend('pty:data', id, data);
       maybeNotifyAttention(id, data);
@@ -559,12 +600,9 @@ function setupPtyManager(): void {
     onTitleUpdate: (id, title) => {
       safeSend('pty:title-update', id, title);
     },
-    onExit: (id) => {
-      // 兜底：从 buffer 中提取 resume ID
-      ptyManager.captureResumeFromBuffer(id);
-
+    onExit: (id, exitedSession) => {
       // 保存有 resume ID 的会话到已关闭列表
-      const session = ptyManager.getSession(id);
+      const session = exitedSession || ptyManager.getSession(id);
       if (session?.resumeId) {
         addClosedSession({
           title: session.title,
@@ -595,7 +633,7 @@ function setupPtyManager(): void {
     onAutoSwitchStatus: (id, status, detail) => {
       safeSend('pty:auto-switch-status', id, status, detail);
     },
-  }, () => loadAiPreferenceData().manualConfig || null);
+  });
 }
 
 function registerIPC(): void {
@@ -605,8 +643,8 @@ function registerIPC(): void {
   });
 
   // 创建终端
-  ipcMain.handle('pty:create', (_e, cwd: string, presetCommand: string, themeId: string, providerEnv?: Record<string, string>) => {
-    const session = ptyManager.create(cwd, presetCommand, themeId, providerEnv);
+  ipcMain.handle('pty:create', async (_e, cwd: string, presetCommand: string, themeId: string, providerEnv?: Record<string, string>) => {
+    const session = await ptyManager.create(cwd, presetCommand, themeId, providerEnv);
     // 如果有 providerEnv，根据 baseUrl 推断 provider 名称
     let provider: string | null = null;
     if (providerEnv && providerEnv.ANTHROPIC_BASE_URL) {
@@ -627,7 +665,7 @@ function registerIPC(): void {
     } else {
       provider = getCliProvider(presetCommand);
     }
-    (session as any).provider = provider;
+    await ptyManager.setProvider(session.id, provider);
     return {
       id: session.id,
       title: session.title,
@@ -639,22 +677,22 @@ function registerIPC(): void {
   });
 
   // 写入数据
-  ipcMain.handle('pty:write', (_e, id: string, data: string) => {
+  ipcMain.handle('pty:write', async (_e, id: string, data: string) => {
     console.log(`[Main] pty:write 收到, id=${id}, data="${data}"`);
-    ptyManager.write(id, data);
+    await ptyManager.write(id, data);
     return true;
   });
 
   // 调整大小
-  ipcMain.handle('pty:resize', (_e, id: string, cols: number, rows: number) => {
-    ptyManager.resize(id, cols, rows);
+  ipcMain.handle('pty:resize', async (_e, id: string, cols: number, rows: number) => {
+    await ptyManager.resize(id, cols, rows);
     return true;
   });
 
   // 销毁终端
-  ipcMain.on('pty:destroy', (_e, id: string) => {
+  ipcMain.on('pty:destroy', async (_e, id: string) => {
     // 兜底：从 buffer 提取 resume ID，保存到已关闭列表
-    ptyManager.captureResumeFromBuffer(id);
+    await ptyManager.captureResumeFromBuffer(id);
     const session = ptyManager.getSession(id);
     if (session?.resumeId) {
       addClosedSession({
@@ -667,7 +705,7 @@ function registerIPC(): void {
     }
 
     sessionUserClosed.add(id);
-    ptyManager.destroy(id);
+    await ptyManager.destroy(id);
     sessionOutputTail.delete(id);
     sessionLastInputAt.delete(id);
     sessionArmedForNotify.delete(id);
@@ -677,7 +715,9 @@ function registerIPC(): void {
 
   // 重命名终端
   ipcMain.on('pty:rename', (_e, id: string, title: string) => {
-    ptyManager.rename(id, title);
+    ptyManager.rename(id, title).catch((error) => {
+      console.error('[Main] Failed to rename PTY session:', error);
+    });
   });
 
   // 重新用 AI 生成标题
@@ -686,13 +726,16 @@ function registerIPC(): void {
   });
 
   // 获取所有会话信息
-  ipcMain.handle('pty:sessions', () => {
-    return ptyManager.getAllSessions().map((s) => ({
+  ipcMain.handle('pty:sessions', async () => {
+    const sessions = await ptyManager.refreshSessions();
+    return sessions.map((s) => ({
       id: s.id,
       title: s.title,
       themeId: s.themeId,
       cwd: s.cwd,
       displayName: getDisplayName(s.presetCommand),
+      provider: s.provider,
+      rawBuffer: s.rawBuffer,
     }));
   });
 
@@ -733,11 +776,17 @@ function registerIPC(): void {
 
   // 选择工作目录
   ipcMain.handle('dialog:select-folder', async (_e, currentPath?: string) => {
-    if (!mainWindow) return null;
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory'],
-      defaultPath: currentPath || os.homedir(),
-    });
+    const defaultPath = currentPath && fs.existsSync(currentPath) ? currentPath : os.homedir();
+    const dialogOptions: Electron.OpenDialogOptions = {
+      title: '选择工作目录',
+      buttonLabel: '选择此文件夹',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath,
+    };
+    const ownerWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
@@ -882,19 +931,8 @@ function registerIPC(): void {
     }
   });
 
-  ipcMain.handle('filewatcher:open', async (_e, filePath: string) => {
-    const editor = loadEditorPreference();
-    if (editor) {
-      if (process.platform === 'win32') {
-        spawn(editor, [filePath], { detached: true, stdio: 'ignore' });
-      } else if (process.platform === 'darwin') {
-        spawn('open', ['-a', editor, filePath], { detached: true, stdio: 'ignore' });
-      } else {
-        spawn(editor, [filePath], { detached: true, stdio: 'ignore' });
-      }
-    } else {
-      await shell.openPath(filePath);
-    }
+  ipcMain.handle('filewatcher:open', async (_e, filePath: string): Promise<OpenEditorResult> => {
+    return openFileInEditor(filePath);
   });
 
   ipcMain.handle('filewatcher:select-editor', async () => {
@@ -1305,7 +1343,7 @@ function registerIPC(): void {
 }
 
 app.whenReady().then(async () => {
-  setupPtyManager();
+  await setupPtyManager();
 
   // macOS Dock 图标 — 在窗口创建前设置
   const appIcon = loadAppIcon();

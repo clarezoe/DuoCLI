@@ -149,10 +149,18 @@ const THEME_DOTS: Record<string, string> = {
 };
 
 // 文件路径正则
+const SOURCE_EXT_PATTERN = 'vue|ts|tsx|js|jsx|json|css|scss|less|html|md|yaml|yml|xml|svg|py|go|rs|java|kt|swift|c|cpp|h|hpp|sh|bash|zsh|toml|conf|txt|env|lock|config|nvue|wxml|wxss';
+// 0. 带前缀且可能包含空格的源码路径: ~/My Apps/a.md, /Users/me/My App/a.ts, ./My App/a.ts
+const PREFIXED_SOURCE_PATH_RE = new RegExp(
+  `(?:~\\/|\\/|\\.{1,2}\\/|@\\/?)` +
+    `[^\\n\\r<>"'\`|]*?` +
+    `\\.(?:${SOURCE_EXT_PATTERN})(?::\\d+(?::\\d+)?)?`,
+  'g',
+);
 // 1. 带目录的路径: /abs/path, rel/path, @alias/path, ./rel/path
 const PATH_RE = /(?:@\/?|\.\/|\/)?(?:[\w.\-\u4e00-\u9fff]+\/)+[\w.\-\u4e00-\u9fff]*(?:\.[\w]+)?/g;
 // 2. 单文件名（无目录，有源码扩展名）
-const SINGLE_FILE_RE = /(?<![\/\w.\-])[\w.\-\u4e00-\u9fff]+\.(?:vue|ts|tsx|js|jsx|json|css|scss|less|html|md|yaml|yml|xml|svg|py|go|rs|java|kt|swift|c|cpp|h|hpp|sh|toml|conf|txt|env|config|nvue|wxml|wxss)(?![\w.\-])/g;
+const SINGLE_FILE_RE = new RegExp(`(?<![\\/\\w.\\-])[\\w.\\-\\u4e00-\\u9fff]+\\.(?:${SOURCE_EXT_PATTERN})(?![\\w.\\-])`, 'g');
 
 // 常见源码扩展名
 const SOURCE_EXTS = new Set([
@@ -164,6 +172,16 @@ const SOURCE_EXTS = new Set([
 
 // URL 正则
 const URL_RE = /https?:\/\/[^\s<>"']+/g;
+
+function stripPathSuffix(filePath: string): string {
+  return filePath
+    .replace(/[.,;:!?)\]}>]+$/, '')
+    .replace(/:\d+(?::\d+)?$/, '');
+}
+
+function cleanPathMatch(filePath: string): string {
+  return stripPathSuffix(filePath).replace(/\\ /g, ' ');
+}
 
 // 文件路径链接检测器
 class FilePathLinkProvider implements ILinkProvider {
@@ -240,10 +258,23 @@ class FilePathLinkProvider implements ILinkProvider {
       matched.push({ filePath: url, display: url, index: match.index, length: url.length, isUrl: true });
     }
 
-    // 2. 匹配带目录的路径
+    // 2. 匹配带前缀且可能包含空格的路径
+    PREFIXED_SOURCE_PATH_RE.lastIndex = 0;
+    while ((match = PREFIXED_SOURCE_PATH_RE.exec(text)) !== null) {
+      const rawPath = stripPathSuffix(match[0]);
+      const fp = cleanPathMatch(rawPath);
+      if (fp.length < 4) continue;
+      if (fp.includes('node_modules')) continue;
+      const overlaps = matched.some(r => match!.index >= r.index && match!.index < r.index + r.length);
+      if (overlaps) continue;
+      matched.push({ filePath: fp, display: fp, index: match.index, length: rawPath.length, isUrl: false });
+    }
+
+    // 3. 匹配带目录的路径
     PATH_RE.lastIndex = 0;
     while ((match = PATH_RE.exec(text)) !== null) {
-      let fp = match[0];
+      const rawPath = stripPathSuffix(match[0]);
+      let fp = cleanPathMatch(rawPath);
       if (fp.length < 4) continue;
       const before = text.substring(Math.max(0, match.index - 10), match.index);
       if (/:\/{0,2}$/.test(before) || /:\d+$/.test(before)) continue;
@@ -253,10 +284,10 @@ class FilePathLinkProvider implements ILinkProvider {
       if (!isDir && !fp.startsWith('/') && !SOURCE_EXTS.has(ext)) continue;
       const overlaps = matched.some(r => match!.index >= r.index && match!.index < r.index + r.length);
       if (overlaps) continue;
-      matched.push({ filePath: fp, display: fp, index: match.index, length: fp.length, isUrl: false });
+      matched.push({ filePath: fp, display: fp, index: match.index, length: rawPath.length, isUrl: false });
     }
 
-    // 3. 匹配单文件名
+    // 4. 匹配单文件名
     SINGLE_FILE_RE.lastIndex = 0;
     while ((match = SINGLE_FILE_RE.exec(text)) !== null) {
       const fp = match[0];
@@ -283,7 +314,10 @@ class FilePathLinkProvider implements ILinkProvider {
         });
       } else {
         let resolved = m.filePath;
-        if (resolved.startsWith('/')) {
+        resolved = resolved.replace(/\\ /g, ' ');
+        if (resolved.startsWith('~/')) {
+          // main process expands this to the current user's home directory.
+        } else if (resolved.startsWith('/')) {
           // 绝对路径
         } else if (resolved.startsWith('@/') || resolved.startsWith('@')) {
           resolved = cwd + '/' + resolved.replace(/^@\/?/, '');
@@ -403,7 +437,15 @@ export class TerminalManager {
     const linkProvider = new FilePathLinkProvider(
       terminal,
       () => cwd,
-      (filePath) => { (window as any).duocli.filewatcherOpen(filePath); },
+      (filePath) => {
+        (window as any).duocli.filewatcherOpen(filePath).then((result: { ok?: boolean; error?: string } | undefined) => {
+          if (result && result.ok === false) {
+            console.error('打开编辑器失败:', result.error);
+          }
+        }).catch((error: unknown) => {
+          console.error('打开编辑器失败:', error);
+        });
+      },
     );
     terminal.registerLinkProvider(linkProvider);
 
