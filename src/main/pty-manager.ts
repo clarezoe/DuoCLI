@@ -25,6 +25,7 @@ export interface PtySession {
   createdAt: number;          // Creation timestamp
   resumeId: string | null;    // Captured resume session ID (UUID)
   resumeCommand: string | null; // Full resume command (e.g. "claude --resume xxx")
+  agentSessionId: string | null; // On-disk agent session id (uuid) this live PTY corresponds to (for dedup vs history)
   autoRetryCooldown: number;    // Auto-retry cooldown deadline timestamp
   prevData: string;              // Previous PTY chunk, merged with the current chunk for rate-limit detection
   retryTimer: NodeJS.Timeout | null;  // Auto-retry / account-switch delay timer
@@ -96,6 +97,118 @@ function parseResumeCommand(text: string): { command: string; sessionId: string 
       return { command: build(match), sessionId: match[2] };
     }
   }
+  return null;
+}
+
+// Determine which agent family a launch command belongs to (for on-disk session correlation)
+function agentKindFromCommand(command: string): 'claude' | 'codex' | 'kiro' | 'copilot' | null {
+  const c = (command || '').trim().toLowerCase();
+  if (/^claude\b/.test(c)) return 'claude';
+  if (/^codex\b/.test(c)) return 'codex';
+  if (/^kiro/.test(c)) return 'kiro';
+  if (/^copilot\b/.test(c)) return 'copilot';
+  return null;
+}
+
+// If the launch command is itself a resume command, extract the uuid directly (most reliable path).
+function extractSessionIdFromLaunch(command: string): string | null {
+  const patterns: RegExp[] = [
+    /\bclaude\s+--resume\s+([\w-]+)/i,
+    /\bcodex\s+resume\s+([\w-]+)/i,
+    /\bkiro[\w-]*\s+(?:chat\s+)?--resume-id\s+([\w-]+)/i,
+    /\bcopilot\s+--resume(?:=|\s+)([\w-]+)/i,
+  ];
+  for (const re of patterns) {
+    const m = command.match(re);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Encode an absolute cwd into Claude's project-dir name (every non-alphanumeric char -> '-').
+function encodeClaudeProjectDir(cwd: string): string {
+  return path.resolve(cwd).replace(/[^a-zA-Z0-9]/g, '-');
+}
+
+// Best-effort: find the on-disk agent session id for a session whose PTY was spawned at `spawnedAt`.
+// Returns the newest matching session file's uuid for that agent in that cwd, created/updated after spawn.
+function findAgentSessionIdOnDisk(
+  agent: 'claude' | 'codex' | 'kiro' | 'copilot',
+  cwd: string,
+  spawnedAt: number,
+): string | null {
+  // Allow a small clock skew window: accept files touched a little before the recorded spawn time.
+  const minMtime = spawnedAt - 5000;
+  try {
+    if (agent === 'claude') {
+      const dir = path.join(os.homedir(), '.claude', 'projects', encodeClaudeProjectDir(cwd));
+      if (!fs.existsSync(dir)) return null;
+      let best: { uuid: string; mtimeMs: number } | null = null;
+      for (const name of fs.readdirSync(dir)) {
+        if (!name.endsWith('.jsonl')) continue;
+        try {
+          const st = fs.statSync(path.join(dir, name));
+          if (!st.isFile() || st.mtimeMs < minMtime) continue;
+          if (!best || st.mtimeMs > best.mtimeMs) {
+            best = { uuid: name.replace(/\.jsonl$/, ''), mtimeMs: st.mtimeMs };
+          }
+        } catch { /* skip */ }
+      }
+      return best?.uuid ?? null;
+    }
+    if (agent === 'codex') {
+      const sessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
+      if (!fs.existsSync(sessionsRoot)) return null;
+      const normTarget = path.resolve(cwd);
+      const uuidRe = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+      const listDesc = (d: string): string[] => {
+        try { return fs.readdirSync(d).filter(n => /^\d+$/.test(n)).sort((a, b) => Number(b) - Number(a)); }
+        catch { return []; }
+      };
+      let best: { uuid: string; mtimeMs: number } | null = null;
+      let walked = 0;
+      const WALK_CAP = 400;
+      outer:
+      for (const year of listDesc(sessionsRoot)) {
+        const yearDir = path.join(sessionsRoot, year);
+        for (const month of listDesc(yearDir)) {
+          const monthDir = path.join(yearDir, month);
+          for (const day of listDesc(monthDir)) {
+            const dayDir = path.join(monthDir, day);
+            let names: string[];
+            try { names = fs.readdirSync(dayDir); } catch { continue; }
+            for (const name of names) {
+              if (!name.startsWith('rollout-') || !name.endsWith('.jsonl')) continue;
+              if (walked++ >= WALK_CAP) break outer;
+              const full = path.join(dayDir, name);
+              try {
+                const st = fs.statSync(full);
+                if (!st.isFile() || st.mtimeMs < minMtime) continue;
+                if (best && st.mtimeMs <= best.mtimeMs) continue;
+                const idMatch = name.match(uuidRe);
+                if (!idMatch) continue;
+                // Confirm cwd from the session_meta head before accepting.
+                const fd = fs.openSync(full, 'r');
+                let head = '';
+                try {
+                  const buf = Buffer.alloc(64 * 1024);
+                  const bytes = fs.readSync(fd, buf, 0, buf.length, 0);
+                  head = buf.subarray(0, bytes).toString('utf-8');
+                } finally { fs.closeSync(fd); }
+                const cwdMatch = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                const fileCwd = cwdMatch ? path.resolve(cwdMatch[1].replace(/\\(.)/g, '$1')) : '';
+                if (fileCwd !== normTarget) continue;
+                best = { uuid: idMatch[1], mtimeMs: st.mtimeMs };
+              } catch { /* skip */ }
+            }
+            // Date dirs descend; once we've found a recent match and walked the freshest day, good enough.
+            if (best) break outer;
+          }
+        }
+      }
+      return best?.uuid ?? null;
+    }
+  } catch { /* never throw */ }
   return null;
 }
 
@@ -235,6 +348,7 @@ export class PtyManager {
       createdAt: Date.now(),
       resumeId: null,
       resumeCommand: null,
+      agentSessionId: null,
       autoRetryCooldown: 0,
       prevData: '',
       retryTimer: null,
@@ -429,6 +543,30 @@ export class PtyManager {
       }, 300);
     }
 
+    // Correlate this live PTY with the agent's on-disk session id (uuid) so the renderer can
+    // dedup it against on-disk history and focus (instead of duplicating) an already-open session.
+    // 1) Most reliable: WE launched it via a resume command -> parse the uuid directly, set now.
+    const launchedId = extractSessionIdFromLaunch(presetCommand);
+    if (launchedId) {
+      session.agentSessionId = launchedId;
+    } else {
+      // 2) Best-effort: a fresh agent run writes a new session file shortly after spawn.
+      //    Re-scan a few times after create; never block creation, never throw.
+      const agent = agentKindFromCommand(presetCommand);
+      if (agent === 'claude' || agent === 'codex') {
+        const spawnedAt = Date.now();
+        const attempts = [2500, 6000, 12000];
+        for (const delay of attempts) {
+          setTimeout(() => {
+            const live = this.sessions.get(id);
+            if (!live || live.agentSessionId) return;
+            const found = findAgentSessionIdOnDisk(agent, cwd, spawnedAt);
+            if (found) live.agentSessionId = found;
+          }, delay);
+        }
+      }
+    }
+
     return session;
   }
 
@@ -534,6 +672,16 @@ export class PtyManager {
   }
 
   getAllSessions(): PtySession[] {
+    // Lazily resolve agentSessionId for any agent session that hasn't been correlated yet
+    // (covers the case where the on-disk session file appeared after the create-time scans).
+    for (const session of this.sessions.values()) {
+      if (session.agentSessionId) continue;
+      const agent = agentKindFromCommand(session.presetCommand);
+      if (agent === 'claude' || agent === 'codex') {
+        const found = findAgentSessionIdOnDisk(agent, session.cwd, session.createdAt);
+        if (found) session.agentSessionId = found;
+      }
+    }
     return Array.from(this.sessions.values())
       .sort((a, b) => b.createdAt - a.createdAt);
   }

@@ -16,6 +16,7 @@ export function toPtySessionSnapshot(session: PtySession): PtySessionSnapshot {
     createdAt: session.createdAt,
     resumeId: session.resumeId,
     resumeCommand: session.resumeCommand,
+    agentSessionId: session.agentSessionId,
     exitState: (session.ptyProcess as any).exitState,
   };
 }

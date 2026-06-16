@@ -14,6 +14,7 @@ type PtySessionInfo = {
   displayName: string;
   provider?: string | null;
   rawBuffer?: string;
+  agentSessionId?: string | null;
 };
 
 declare global {
@@ -134,6 +135,9 @@ const sessionCwds: Map<string, string> = new Map();
 const sessionDisplayNames: Map<string, string> = new Map();
 // Actual model provider used by the session (e.g. MiniMax, GLM, Anthropic)
 const sessionProviders: Map<string, string> = new Map();
+// Live PTY -> the agent's on-disk session id (uuid). Used to dedup a live session against its
+// on-disk history row, and to focus (not duplicate) an already-open session on resume.
+const sessionAgentId: Map<string, string> = new Map();
 // Custom provider ID used by each session (to restore selection when switching terminals)
 const sessionClaudeProviderIds: Map<string, string> = new Map();
 
@@ -205,10 +209,26 @@ const AGENT_ID_LABEL: Record<ProjectsAgentId, string> = {
 // Fetch the multi-agent project list from the backend, merging in the user's added folders so they
 // always appear, then refresh the navigator. Also ensures every discovered folder with sessions
 // shows up in the navigator even if the user never explicitly added it.
+// Pull the latest live-session snapshots and refresh the live PTY -> agent-session-id map.
+// The daemon resolves agentSessionId asynchronously (a short disk scan after spawn), so a freshly
+// created session may only gain its id on a later refresh. Keeping this map current is what lets
+// collectProjectSessions() dedup the on-disk history row for a session that is already open.
+async function syncSessionAgentIds(): Promise<void> {
+  try {
+    const sessions = await window.posse.getSessions();
+    for (const s of sessions) {
+      if (s.agentSessionId) sessionAgentId.set(s.id, s.agentSessionId);
+    }
+  } catch {
+    /* ignore — best effort */
+  }
+}
+
 async function refreshProjectsData(): Promise<void> {
   if (projectsDataLoading) return;
   projectsDataLoading = true;
   try {
+    await syncSessionAgentIds();
     const extraFolders = projects.map(p => p.path);
     const list = await window.posse.projectsList({ extraFolders });
     backendProjects.clear();
@@ -1901,6 +1921,13 @@ function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup
     return g;
   };
 
+  // Agent on-disk session ids that are already OPEN as live PTY sessions (any cwd). On-disk history
+  // rows matching one of these are skipped below so an open session shows exactly once.
+  const openAgentIds = new Set<string>();
+  for (const agentId of sessionAgentId.values()) {
+    if (agentId) openAgentIds.add(agentId);
+  }
+
   // 1. Live PTY sessions in this cwd
   for (const id of sessionTitles.keys()) {
     if (normalizeCwd(sessionCwds.get(id) || '') !== key) continue;
@@ -1926,6 +1953,8 @@ function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup
       const family = AGENT_ID_LABEL[agentGroup.agent] || agentFamilyFromDisplayName(agentGroup.agent);
       const g = ensure(family);
       for (const s of agentGroup.sessions) {
+        // Dedup: if this on-disk session is already open as a live PTY, skip the history row.
+        if (openAgentIds.has(s.id)) continue;
         g.history.push({
           id: s.id,
           title: s.title,
@@ -2424,6 +2453,10 @@ async function createSessionInProject(cwd: string, presetCommand: string): Promi
     const dims = termManager.getActiveDimensions();
     if (dims) window.posse.resizePty(result.id, dims.cols, dims.rows);
   }, 100);
+  // A fresh agent run writes its on-disk session file shortly after spawn; the daemon resolves the
+  // uuid asynchronously. Re-sync the live -> agent-id map a few seconds later so the new live session
+  // dedups against its own (now-discoverable) history row instead of showing twice.
+  setTimeout(() => { void refreshProjectsData(); }, 7000);
 }
 
 
@@ -2437,6 +2470,7 @@ function attachPtySession(info: PtySessionInfo, createdAt: number, replayRawBuff
   sessionCwds.set(info.id, info.cwd);
   sessionDisplayNames.set(info.id, info.displayName);
   if (info.provider) sessionProviders.set(info.id, info.provider);
+  if (info.agentSessionId) sessionAgentId.set(info.id, info.agentSessionId);
   termManager.create(info.id, info.themeId, info.cwd, (data) => { writePtyWithAutoReset(info.id, data); });
   if (replayRawBuffer && info.rawBuffer) {
     termManager.write(info.id, info.rawBuffer);
@@ -2492,10 +2526,21 @@ async function loadClaudeHistory(cwd: string): Promise<void> {
 
 // One-click resume of a native agent history session (Claude / Codex)
 async function resumeAgentSession(s: ClaudeHistorySession): Promise<void> {
+  // If this on-disk session is already open as a live PTY, just focus it — never spawn a duplicate.
+  for (const [ptyId, agentId] of sessionAgentId) {
+    if (agentId === s.id && sessionTitles.has(ptyId)) {
+      switchSession(ptyId);
+      return;
+    }
+  }
+
   const themeId = resolveThemeId(currentThemeId, s.cwd);
   const result = await window.posse.createPty(s.cwd, s.resumeCommand, themeId);
   const now = Date.now();
   attachPtySession({ ...result, title: s.title || result.title }, now);
+  // Record the correlation immediately (we launched via a resume command for s.id) so a second
+  // click focuses this session and the history row dedups right away.
+  sessionAgentId.set(result.id, s.id);
   if (s.cwd) { selectedProjectPath = s.cwd; expandedProjects.add(normalizeCwd(s.cwd)); }
 
   updateEmptyState();
@@ -2631,6 +2676,7 @@ function clearSessionState(id: string): void {
   sessionCwds.delete(id);
   sessionDisplayNames.delete(id);
   sessionProviders.delete(id);
+  sessionAgentId.delete(id);
   sessionClaudeProviderIds.delete(id);
   sessionAutoContinue.delete(id);
   sessionAutoSwitchStatus.delete(id);

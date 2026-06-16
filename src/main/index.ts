@@ -829,6 +829,35 @@ function readHead(filePath: string, maxBytes = PROJECTS_HEAD_BYTES): string {
   }
 }
 
+// Read up to tailBytes from the END of a file. Claude appends the `ai-title` line late, so for
+// large jsonl files it can sit beyond the head window; scanning the tail recovers it cheaply.
+function readTail(filePath: string, size: number, tailBytes = 32 * 1024): string {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const start = Math.max(0, size - tailBytes);
+    const len = Math.min(tailBytes, size);
+    const buf = Buffer.alloc(len);
+    const bytes = fs.readSync(fd, buf, 0, len, start);
+    return buf.subarray(0, bytes).toString('utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// Scan a chunk of jsonl lines for the LAST `ai-title`. Returns '' if none found.
+function findAiTitleInChunk(chunk: string): string {
+  let aiTitle = '';
+  for (const line of chunk.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.includes('"ai-title"')) continue;
+    try {
+      const obj = JSON.parse(trimmed) as { type?: string; aiTitle?: string };
+      if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') aiTitle = obj.aiTitle;
+    } catch { /* skip partial/broken line (tail reads may start mid-line) */ }
+  }
+  return aiTitle;
+}
+
 // --- Claude: ~/.claude/projects/<enc>/<uuid>.jsonl ; real cwd from in-file `cwd` ---
 function discoverClaudeSessions(): DiscoveredSession[] {
   const MAX_FILES = 300;
@@ -879,6 +908,12 @@ function discoverClaudeSessions(): DiscoveredSession[] {
           if (!firstUserText && obj.type === 'user' && typeof obj.message?.content === 'string') {
             firstUserText = obj.message.content;
           }
+        }
+        // The ai-title line is appended late and may be past the head window for large files.
+        // Scan the tail too and prefer the latest ai-title found anywhere.
+        if (!aiTitle.trim() && f.size > PROJECTS_HEAD_BYTES) {
+          const tailTitle = findAiTitleInChunk(readTail(f.full, f.size));
+          if (tailTitle.trim()) aiTitle = tailTitle;
         }
         const title = aiTitle.trim()
           ? aiTitle.trim().slice(0, 60)
@@ -1220,6 +1255,7 @@ function registerIPC(): void {
       cwd: session.cwd,
       displayName: getDisplayName(session.presetCommand),
       provider,
+      agentSessionId: session.agentSessionId,
     };
   });
 
@@ -1283,6 +1319,7 @@ function registerIPC(): void {
       displayName: getDisplayName(s.presetCommand),
       provider: s.provider,
       rawBuffer: s.rawBuffer,
+      agentSessionId: s.agentSessionId,
     }));
   });
 
@@ -1408,8 +1445,9 @@ function registerIPC(): void {
 
     const parseTitle = (filePath: string, size: number, uuid: string): string => {
       try {
+        const isLarge = size > LARGE_FILE_BYTES;
         let content: string;
-        if (size > LARGE_FILE_BYTES) {
+        if (isLarge) {
           const fd = fs.openSync(filePath, 'r');
           try {
             const buf = Buffer.alloc(HEAD_BYTES);
@@ -1438,6 +1476,13 @@ function registerIPC(): void {
             const c = obj.message?.content;
             if (typeof c === 'string') firstUserText = c;
           }
+        }
+
+        // For large files we only read the head; the ai-title is appended late and may be
+        // past that window. Scan the tail to recover it before falling back to the user text.
+        if (!aiTitle.trim() && isLarge) {
+          const tailTitle = findAiTitleInChunk(readTail(filePath, size));
+          if (tailTitle.trim()) aiTitle = tailTitle;
         }
 
         if (aiTitle.trim()) return aiTitle.trim().slice(0, 60);

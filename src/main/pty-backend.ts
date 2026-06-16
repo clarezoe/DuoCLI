@@ -12,6 +12,7 @@ export interface PtySessionSnapshot {
   createdAt: number;
   resumeId: string | null;
   resumeCommand: string | null;
+  agentSessionId: string | null;
   exitState?: unknown;
 }
 
