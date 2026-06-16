@@ -124,73 +124,13 @@
         <div class="remote-info-url"></div>
         <div class="remote-info-token"></div>
       </div>
-      <div id="sidebar-tabs">
-        <button class="sidebar-tab active" data-tab="sessions">Sessions</button>
-        <button class="sidebar-tab" data-tab="ai-config">&#128295; AI</button>
-        <button class="sidebar-tab" data-tab="devin-accounts">&#128100; Devin</button>
-      </div>
-
       <!-- Sessions Tab: Codex-style project navigator -->
       <div id="tab-sessions" class="tab-content active">
+        <div id="project-toolbar">
+          <input id="project-search" type="text" placeholder="Search…" autocomplete="off" spellcheck="false" />
+          <button id="project-sort" type="button" title="Sort projects">Recent</button>
+        </div>
         <div id="project-nav"></div>
-      </div>
-
-      <!-- AI Config Tab -->
-      <div id="tab-ai-config" class="tab-content">
-        <div id="ai-config-form">
-          <div class="ai-form-group">
-            <label class="ai-form-label">API Format</label>
-            <select id="ai-format-select" class="ai-form-input">
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI Compatible</option>
-              <option value="gemini">Gemini</option>
-              <option value="ollama">Ollama</option>
-            </select>
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-form-label">Base URL</label>
-            <input id="ai-baseurl-input" class="ai-form-input" type="text" placeholder="https://api.anthropic.com" />
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-form-label">API Key</label>
-            <div class="ai-key-row">
-              <input id="ai-apikey-input" class="ai-form-input" type="password" placeholder="Enter API Key..." />
-              <button id="ai-key-toggle" class="ai-key-toggle-btn" title="Show/hide">&#128065;</button>
-            </div>
-          </div>
-          <div class="ai-form-group">
-            <label class="ai-form-label">Model</label>
-            <input id="ai-model-input" class="ai-form-input" type="text" placeholder="claude-3-5-haiku-20241022" />
-          </div>
-        </div>
-        <div id="ai-config-actions">
-          <button id="ai-test-btn" class="toolbar-btn ai-btn">Test</button>
-          <button id="ai-apply-btn" class="toolbar-btn ai-btn ai-apply-btn">Save</button>
-        </div>
-      </div>
-
-      <!-- Devin Accounts Tab -->
-      <div id="tab-devin-accounts" class="tab-content">
-        <div id="devin-accounts-header">
-          <span id="devin-current-label" class="devin-current-label">Current: --</span>
-          <button id="devin-refresh-btn" class="devin-header-btn" title="Refresh">&#8635;</button>
-          <button id="devin-quota-btn" class="devin-header-btn" title="Check quota">Quota</button>
-          <button id="devin-quota-all-btn" class="devin-header-btn devin-quota-all-btn" title="Refresh all quotas">Refresh All Quotas</button>
-        </div>
-        <div id="devin-accounts-list" class="devin-accounts-list">
-          <div class="devin-accounts-empty">Loading...</div>
-        </div>
-        <div id="devin-accounts-add" class="devin-accounts-add">
-          <input id="devin-add-email" class="ai-form-input" type="text" placeholder="Email" />
-          <input id="devin-add-password" class="ai-form-input" type="password" placeholder="Password" />
-          <button id="devin-add-btn" class="toolbar-btn devin-btn">Add Account</button>
-          <div class="devin-batch-separator">
-            <span class="devin-batch-label">Bulk Import</span>
-            <span class="devin-batch-hint">One per line: email password (separated by space or ----)</span>
-          </div>
-          <textarea id="devin-batch-input" class="devin-batch-input" rows="6" placeholder="user1@gmail.com pass123&#10;user2@gmail.com----pass456"></textarea>
-          <button id="devin-batch-btn" class="toolbar-btn devin-btn devin-batch-btn">Bulk Import</button>
-        </div>
       </div>
 
       <!-- Footer / copyright -->

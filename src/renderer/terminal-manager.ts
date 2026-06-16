@@ -433,6 +433,17 @@ export class TerminalManager {
     terminal.open(container);
     terminal.onData((data) => onData(data));
 
+    // Shift+Enter inserts a literal newline (LF) instead of submitting. Plain Enter keeps the
+    // default behavior (xterm sends CR `\r`, which submits). Returning false suppresses xterm's
+    // own handling of this key event so it does NOT also send the default `\r`.
+    terminal.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+      if (event.type === 'keydown' && event.key === 'Enter' && event.shiftKey) {
+        onData('\n');
+        return false;
+      }
+      return true;
+    });
+
     // Register file-path link detection
     const linkProvider = new FilePathLinkProvider(
       terminal,

@@ -4,6 +4,16 @@
 
 Redesign the **desktop main renderer** (`src/renderer/`) session+terminal workspace into a Warp/Codex-inspired layout so the user can: (1) see all live terminals and resume them, (2) clearly tell what each terminal is doing (label + agent + folder + status), grouped by agent/folder, (3) work in the main window, and (4) preview document/file contents in a side panel. Inspired-by, not a code copy. Single-agent is the common case; multi-agent is occasional.
 
+## 📋 Follow-up requirements batch (2026-06-17, captured to avoid loss)
+
+1. **Project list sort + search** — Codex-style: a "Sort by" control (Recent / Name; Codex also has Created vs Updated) and a "Search chats" box filtering projects + sessions by substring. Status: TODO.
+2. **Remove AI + Devin tabs** from the sidebar entirely. Status: DONE (UI removed; harmless type/label leftovers remain).
+3. **Sessions default COLLAPSED** — projects and per-agent groups start collapsed; expand state persisted. Status: DONE (expandedProjects/expandedAgentGroups sets).
+4. **Terminal Shift+Enter = newline, not submit** — plain Enter submits (`\r`), Shift+Enter inserts `\n`. Status: TODO (terminal-manager.ts).
+5. **Visual redesign referencing Codex** — current UI is ugly; restyle to Codex's clean dark/green aesthetic (mono, compact rows, subtle borders). Status: TODO (biggest item).
+
+Process note: when the user dumps a batch of requirements (even within the current task), capture them here first (they have been lost before), then implement.
+
 ## ⭐ CORRECTED SPEC (2026-06-17) — Projects-first, Conductor/Codex-style layout (AUTHORITATIVE)
 
 The earlier "enhance the existing session rail with a group-by toggle" interpretation was

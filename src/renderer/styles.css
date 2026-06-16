@@ -2414,3 +2414,49 @@ select.ai-form-input {
 .devin-batch-btn:hover:not(:disabled) {
   opacity: 0.85;
 }
+
+/* ===== Projects panel toolbar: search + sort ===== */
+#project-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+#project-search {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+#project-search::placeholder {
+  color: var(--text-secondary);
+}
+
+#project-search:focus {
+  border-color: var(--accent);
+}
+
+#project-sort {
+  flex: 0 0 auto;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#project-sort:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}

@@ -177,10 +177,60 @@ interface ProjectEntry {
 const PROJECTS_STORAGE_KEY = 'posse_projects';
 let projects: ProjectEntry[] = loadProjects();
 
-// In-memory UI state (not persisted): which projects are expanded, which agent groups are collapsed
-const expandedProjects: Set<string> = new Set(); // key = normalized project path
-const collapsedAgentGroups: Set<string> = new Set(); // key = `${normPath}::${agentFamily}`
+// ========== Projects panel sort + search (Codex-style toolbar) ==========
+type ProjectSortMode = 'recent' | 'name';
+const PROJECT_SORT_STORAGE_KEY = 'posse_project_sort';
+function loadProjectSort(): ProjectSortMode {
+  const raw = localStorage.getItem(PROJECT_SORT_STORAGE_KEY);
+  return raw === 'name' ? 'name' : 'recent';
+}
+let projectSortMode: ProjectSortMode = loadProjectSort();
+// Live, lower-cased search query. Empty => no filtering, persisted collapse state is honored.
+let projectSearchQuery = '';
+
+// UI expand/collapse state (persisted to localStorage). DEFAULT for a never-touched project or
+// agent group is COLLAPSED: a project/group is only open if its key is present in the matching
+// "expanded" set. expandedProjects key = normalized project path; expandedAgentGroups key =
+// `${normPath}::${agentFamily}`.
+const EXPAND_STATE_STORAGE_KEY = 'posse_expand_state';
+const expandedProjects: Set<string> = new Set();
+const expandedAgentGroups: Set<string> = new Set();
 let projectsSectionCollapsed = false;
+
+function loadExpandState(): void {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXPAND_STATE_STORAGE_KEY) || '{}');
+    if (raw && Array.isArray(raw.projects)) for (const k of raw.projects) expandedProjects.add(String(k));
+    if (raw && Array.isArray(raw.agentGroups)) for (const k of raw.agentGroups) expandedAgentGroups.add(String(k));
+  } catch {
+    /* ignore corrupt state */
+  }
+}
+
+function saveExpandState(): void {
+  try {
+    localStorage.setItem(EXPAND_STATE_STORAGE_KEY, JSON.stringify({
+      projects: Array.from(expandedProjects),
+      agentGroups: Array.from(expandedAgentGroups),
+    }));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+loadExpandState();
+
+function setProjectExpanded(key: string, expanded: boolean): void {
+  if (expanded) expandedProjects.add(key);
+  else expandedProjects.delete(key);
+  saveExpandState();
+}
+
+function setAgentGroupExpanded(groupKey: string, expanded: boolean): void {
+  if (expanded) expandedAgentGroups.add(groupKey);
+  else expandedAgentGroups.delete(groupKey);
+  saveExpandState();
+}
 
 // Currently selected project (drives the RIGHT file panel root + highlight). Independent of the
 // active terminal session: selecting a project switches the file tree even with no session open.
@@ -278,12 +328,12 @@ function addProject(path: string): void {
   if (!path) return;
   if (findProject(path)) {
     // Already exists: just expand it
-    expandedProjects.add(normalizeCwd(path));
+    setProjectExpanded(normalizeCwd(path), true);
     renderSessionList();
     return;
   }
   projects.push({ path, pinned: false, addedAt: Date.now() });
-  expandedProjects.add(normalizeCwd(path));
+  setProjectExpanded(normalizeCwd(path), true);
   saveProjects();
   renderSessionList();
 }
@@ -291,7 +341,7 @@ function addProject(path: string): void {
 function removeProject(path: string): void {
   const key = normalizeCwd(path);
   projects = projects.filter(p => normalizeCwd(p.path) !== key);
-  expandedProjects.delete(key);
+  setProjectExpanded(key, false);
   if (selectedProjectPath && normalizeCwd(selectedProjectPath) === key) {
     selectedProjectPath = null;
     updateSessionTitleBar();
@@ -322,6 +372,65 @@ function renameProject(path: string): void {
 
 function projectDisplayName(p: ProjectEntry): string {
   return p.name || cwdShortName(p.path);
+}
+
+// Most-recent activity for a project (ms): backend lastActiveMs, else any matching live/closed
+// session time, else the time the project was added. Used by the "Recent" sort.
+function projectLastActiveMs(p: ProjectEntry): number {
+  const key = normalizeCwd(p.path);
+  let latest = backendProjects.get(key)?.lastActiveMs || 0;
+  for (const id of sessionTitles.keys()) {
+    if (normalizeCwd(sessionCwds.get(id) || '') === key) {
+      latest = Math.max(latest, sessionUpdateTimes.get(id) || 0);
+    }
+  }
+  for (const cs of closedSessions) {
+    if (normalizeCwd(cs.cwd || '') === key) latest = Math.max(latest, cs.closedAt || 0);
+  }
+  return latest || p.addedAt || 0;
+}
+
+// Sort a project list per the current toolbar mode (returns a new array).
+function sortProjects(list: ProjectEntry[]): ProjectEntry[] {
+  const arr = list.slice();
+  if (projectSortMode === 'name') {
+    arr.sort((a, b) =>
+      projectDisplayName(a).toLowerCase().localeCompare(projectDisplayName(b).toLowerCase())
+    );
+  } else {
+    arr.sort((a, b) => projectLastActiveMs(b) - projectLastActiveMs(a));
+  }
+  return arr;
+}
+
+// Does a project match the active search query (by project name OR any session title)?
+function projectMatchesSearch(p: ProjectEntry): boolean {
+  const q = projectSearchQuery;
+  if (!q) return true;
+  if (projectDisplayName(p).toLowerCase().includes(q)) return true;
+  const groups = collectProjectSessions(p.path);
+  for (const g of groups.values()) {
+    for (const id of g.lives) {
+      if ((sessionTitles.get(id) || '').toLowerCase().includes(q)) return true;
+    }
+    for (const cs of g.closed) {
+      if ((cs.title || cs.displayName || '').toLowerCase().includes(q)) return true;
+    }
+    for (const s of g.history) {
+      if ((s.title || '').toLowerCase().includes(q)) return true;
+    }
+  }
+  return false;
+}
+
+// Does a specific agent group contain a session title matching the query?
+function agentGroupMatchesSearch(g: ProjectAgentGroup): boolean {
+  const q = projectSearchQuery;
+  if (!q) return false;
+  for (const id of g.lives) if ((sessionTitles.get(id) || '').toLowerCase().includes(q)) return true;
+  for (const cs of g.closed) if ((cs.title || cs.displayName || '').toLowerCase().includes(q)) return true;
+  for (const s of g.history) if ((s.title || '').toLowerCase().includes(q)) return true;
+  return false;
 }
 
 // Map a session displayName / preset family to a coarse agent group label
@@ -1149,37 +1258,41 @@ const sidebar = document.getElementById('sidebar')!;;
 const sidebarToggle = document.getElementById('sidebar-toggle')!;
 const sidebarResizer = document.getElementById('sidebar-resizer')!;
 
+// ========== Projects panel toolbar: search + sort ==========
+(function initProjectToolbar() {
+  const searchInput = document.getElementById('project-search') as HTMLInputElement | null;
+  const sortBtn = document.getElementById('project-sort') as HTMLButtonElement | null;
+
+  const updateSortLabel = (): void => {
+    if (sortBtn) sortBtn.textContent = projectSortMode === 'name' ? 'Name' : 'Recent';
+  };
+  updateSortLabel();
+
+  if (searchInput) {
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    searchInput.addEventListener('input', () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        projectSearchQuery = searchInput.value.trim().toLowerCase();
+        renderSessionList();
+      }, 120);
+    });
+  }
+
+  if (sortBtn) {
+    sortBtn.addEventListener('click', () => {
+      projectSortMode = projectSortMode === 'recent' ? 'name' : 'recent';
+      try { localStorage.setItem(PROJECT_SORT_STORAGE_KEY, projectSortMode); } catch { /* ignore */ }
+      updateSortLabel();
+      renderSessionList();
+    });
+  }
+})();
+
 // File statusbar DOM
 const fileStatusbar = document.getElementById('file-statusbar')!;
 const fileStatusbarFiles = document.getElementById('file-statusbar-files')!;
 const appVersionEl = document.getElementById('app-version')!;
-
-const sidebarTabs = document.querySelectorAll('.sidebar-tab');
-const tabSessions = document.getElementById('tab-sessions')!;
-
-// AI config DOM
-const tabAiConfig = document.getElementById('tab-ai-config')!;
-
-// Devin account management DOM
-const tabDevinAccounts = document.getElementById('tab-devin-accounts')!;
-const devinAccountsList = document.getElementById('devin-accounts-list')!;
-const devinCurrentLabel = document.getElementById('devin-current-label')!;
-const devinRefreshBtn = document.getElementById('devin-refresh-btn') as HTMLButtonElement;
-const devinQuotaBtn = document.getElementById('devin-quota-btn') as HTMLButtonElement;
-const devinQuotaAllBtn = document.getElementById('devin-quota-all-btn') as HTMLButtonElement;
-const devinAddEmail = document.getElementById('devin-add-email') as HTMLInputElement;
-const devinAddPassword = document.getElementById('devin-add-password') as HTMLInputElement;
-const devinAddBtn = document.getElementById('devin-add-btn') as HTMLButtonElement;
-const devinBatchInput = document.getElementById('devin-batch-input') as HTMLTextAreaElement;
-const devinBatchBtn = document.getElementById('devin-batch-btn') as HTMLButtonElement;
-const aiApplyBtn = document.getElementById('ai-apply-btn')!;
-const aiTestBtn = document.getElementById('ai-test-btn')!;
-const aiFormatSelect = document.getElementById('ai-format-select') as HTMLSelectElement;
-const aiBaseurlInput = document.getElementById('ai-baseurl-input') as HTMLInputElement;
-const aiApikeyInput = document.getElementById('ai-apikey-input') as HTMLInputElement;
-const aiModelInput = document.getElementById('ai-model-input') as HTMLInputElement;
-const aiKeyToggle = document.getElementById('ai-key-toggle')!;
-
 
 // File watcher state (global)
 let globalRecentFiles: string[] = [];
@@ -1444,8 +1557,9 @@ function selectProject(projPath: string): void {
   if (!projPath) return;
   selectedProjectPath = projPath;
   const key = normalizeCwd(projPath);
-  expandedProjects.add(key);
-  // Lazily load this project's multi-agent history the first time it expands.
+  // Note: selecting a project drives the RIGHT file panel only; it must NOT force-expand the
+  // project's session list (default-collapsed per project). Lazily load its multi-agent history
+  // so the data is ready when the user does expand it.
   if (!backendProjects.has(key) && !projectsDataLoading) void refreshProjectsData();
   renderSessionList();
   updateSessionTitleBar();
@@ -1981,7 +2095,10 @@ function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup
 // Render a single project entry (collapsed by default)
 function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
   const key = normalizeCwd(p.path);
-  const isExpanded = expandedProjects.has(key);
+  // While searching, force-expand matching projects to reveal hits (without mutating persisted
+  // collapse state). Clearing the query restores the user's saved expand/collapse state.
+  const searching = projectSearchQuery.length > 0;
+  const isExpanded = searching ? true : expandedProjects.has(key);
 
   const isSelected = selectedProjectPath != null && normalizeCwd(selectedProjectPath) === key;
   const row = document.createElement('div');
@@ -2041,9 +2158,9 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
   chevron.addEventListener('click', (e) => {
     e.stopPropagation();
     if (expandedProjects.has(key)) {
-      expandedProjects.delete(key);
+      setProjectExpanded(key, false);
     } else {
-      expandedProjects.add(key);
+      setProjectExpanded(key, true);
       if (!backendProjects.has(key) && !projectsDataLoading) void refreshProjectsData();
     }
     renderSessionList();
@@ -2076,7 +2193,10 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
   for (const family of sortedFamilies) {
     const g = groups.get(family)!;
     const groupKey = `${key}::${family}`;
-    const groupCollapsed = collapsedAgentGroups.has(groupKey);
+    // Agent groups are COLLAPSED by default: only expanded if explicitly opened by the user.
+    // While searching, auto-expand groups that contain a matching session title.
+    const groupCollapsed =
+      searching && agentGroupMatchesSearch(g) ? false : !expandedAgentGroups.has(groupKey);
     const count = g.lives.length + g.closed.length + g.history.length;
 
     const groupHeader = document.createElement('div');
@@ -2100,8 +2220,7 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
     groupHeader.appendChild(gName);
     groupHeader.appendChild(gCount);
     groupHeader.addEventListener('click', () => {
-      if (collapsedAgentGroups.has(groupKey)) collapsedAgentGroups.delete(groupKey);
-      else collapsedAgentGroups.add(groupKey);
+      setAgentGroupExpanded(groupKey, !expandedAgentGroups.has(groupKey));
       renderSessionList();
     });
     sessionList.appendChild(groupHeader);
@@ -2131,8 +2250,8 @@ function renderSessionList(): void {
   }
   sessionList.innerHTML = '';
 
-  const pinned = projects.filter(p => p.pinned);
-  const rest = projects.filter(p => !p.pinned);
+  const pinned = sortProjects(projects.filter(p => p.pinned && projectMatchesSearch(p)));
+  const rest = sortProjects(projects.filter(p => !p.pinned && projectMatchesSearch(p)));
 
   // ========== Pinned section ==========
   if (pinned.length > 0) {
@@ -2163,6 +2282,8 @@ function renderSessionList(): void {
   collapseAllBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     expandedProjects.clear();
+    expandedAgentGroups.clear();
+    saveExpandState();
     renderSessionList();
   });
 
@@ -2194,7 +2315,7 @@ function renderSessionList(): void {
   if (rest.length === 0 && pinned.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'nav-project-empty';
-    empty.textContent = 'Add a project folder to get started';
+    empty.textContent = projectSearchQuery ? 'No matching projects' : 'Add a project folder to get started';
     sessionList.appendChild(empty);
   } else {
     for (const p of rest) renderProjectEntry(p, activeId);
@@ -2442,7 +2563,7 @@ async function createSessionInProject(cwd: string, presetCommand: string): Promi
     projects.push({ path: cwd, pinned: false, addedAt: now });
     saveProjects();
   }
-  expandedProjects.add(normalizeCwd(cwd));
+  setProjectExpanded(normalizeCwd(cwd), true);
   selectedProjectPath = cwd;
 
   updateEmptyState();
@@ -2490,7 +2611,7 @@ async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
   const result = await window.posse.createPty(cwd, resumeCmd, themeId);
   const now = Date.now();
   attachPtySession({ ...result, title: cs.title, displayName: cs.displayName || result.displayName }, now);
-  if (cwd) { selectedProjectPath = cwd; expandedProjects.add(normalizeCwd(cwd)); }
+  if (cwd) { selectedProjectPath = cwd; setProjectExpanded(normalizeCwd(cwd), true); }
 
   // Remove from the closed list
   closedSessions = await window.posse.closedSessionsRemove(cs.id);
@@ -2541,7 +2662,7 @@ async function resumeAgentSession(s: ClaudeHistorySession): Promise<void> {
   // Record the correlation immediately (we launched via a resume command for s.id) so a second
   // click focuses this session and the history row dedups right away.
   sessionAgentId.set(result.id, s.id);
-  if (s.cwd) { selectedProjectPath = s.cwd; expandedProjects.add(normalizeCwd(s.cwd)); }
+  if (s.cwd) { selectedProjectPath = s.cwd; setProjectExpanded(normalizeCwd(s.cwd), true); }
 
   updateEmptyState();
   renderSessionList();
@@ -2807,79 +2928,6 @@ function startFileWatcher(cwd: string): void {
   globalRecentFiles = [];
   renderFileStatusbar();
   window.posse.filewatcherStart(cwd);
-}
-
-// ========== AI config ==========
-
-async function refreshAiConfig(): Promise<void> {
-  // Load the currently active config from the main process and fill the form
-  const config = await window.posse.aiGetCurrentConfig();
-  if (config) {
-    aiFormatSelect.value = config.apiFormat || 'anthropic';
-    aiBaseurlInput.value = config.baseUrl || '';
-    aiApikeyInput.value = config.apiKey || '';
-    aiModelInput.value = config.model || '';
-  }
-}
-
-
-async function handleAiApply(): Promise<void> {
-  const config = {
-    apiFormat: aiFormatSelect.value,
-    baseUrl: aiBaseurlInput.value.trim(),
-    apiKey: aiApikeyInput.value.trim(),
-    model: aiModelInput.value.trim(),
-  };
-  if (!config.baseUrl) {
-    aiApplyBtn.textContent = 'Please enter a Base URL';
-    setTimeout(() => { aiApplyBtn.textContent = 'Save'; }, 1500);
-    return;
-  }
-  await window.posse.aiApplyConfig(config);
-  aiApplyBtn.textContent = 'Saved';
-  setTimeout(() => { aiApplyBtn.textContent = 'Save'; }, 1500);
-}
-
-async function handleAiTest(): Promise<void> {
-  const config = {
-    apiFormat: aiFormatSelect.value,
-    baseUrl: aiBaseurlInput.value.trim(),
-    apiKey: aiApikeyInput.value.trim(),
-    model: aiModelInput.value.trim(),
-  };
-  if (!config.baseUrl) {
-    aiTestBtn.textContent = 'Please fill in the config first';
-    setTimeout(() => { aiTestBtn.textContent = 'Test'; }, 1500);
-    return;
-  }
-  aiTestBtn.textContent = 'Testing...';
-  aiTestBtn.setAttribute('disabled', 'true');
-  try {
-    const result = await window.posse.aiTestConfig(config);
-    if (result.ok) {
-      aiTestBtn.textContent = '✓ Connected';
-    } else {
-      aiTestBtn.textContent = '✗ Failed';
-      alert('AI config test failed:\n' + (result.error || 'Unknown error'));
-    }
-  } catch (e: any) {
-    aiTestBtn.textContent = '✗ Failed';
-    alert('AI config test failed:\n' + (e.message || 'Unknown error'));
-  } finally {
-    aiTestBtn.removeAttribute('disabled');
-    setTimeout(() => { aiTestBtn.textContent = 'Test'; }, 2000);
-  }
-}
-
-function switchTab(tabName: string): void {
-  sidebarTabs.forEach((tab) => {
-    tab.classList.toggle('active', tab.getAttribute('data-tab') === tabName);
-  });
-  tabSessions.classList.toggle('active', tabName === 'sessions');
-  tabAiConfig.classList.toggle('active', tabName === 'ai-config');
-  tabDevinAccounts.classList.toggle('active', tabName === 'devin-accounts');
-  if (tabName === 'ai-config') refreshAiConfig();
-  if (tabName === 'devin-accounts') refreshDevinAccounts();
 }
 
 // ========== Event bindings ==========
@@ -3222,21 +3270,6 @@ presetAddBtn.addEventListener('click', async () => {
 
 presetManageBtn.addEventListener('click', () => {
   showPresetManageDialog();
-});
-
-// Tab switching
-sidebarTabs.forEach((tab) => {
-  tab.addEventListener('click', () => {
-    const tabName = tab.getAttribute('data-tab');
-    if (tabName) switchTab(tabName);
-  });
-});
-
-// AI config buttons
-aiTestBtn.addEventListener('click', () => handleAiTest());
-aiApplyBtn.addEventListener('click', () => handleAiApply());
-aiKeyToggle.addEventListener('click', () => {
-  aiApikeyInput.type = aiApikeyInput.type === 'password' ? 'text' : 'password';
 });
 
 // ========== IPC listeners ==========
@@ -3647,255 +3680,4 @@ window.posse.getAppVersion().then((version) => {
   appVersionEl.textContent = `v${version}`;
 }).catch(() => {
   appVersionEl.textContent = 'v?';
-});
-
-// ========== Devin account management ==========
-
-let devinLoading = false;
-
-async function refreshDevinAccounts(): Promise<void> {
-  if (devinLoading) return;
-  devinLoading = true;
-  try {
-    const data = await window.posse.devinAccountsList();
-    renderDevinAccountsList(data);
-  } catch {
-    devinAccountsList.innerHTML = '<div class="devin-accounts-empty">Failed to load</div>';
-  } finally {
-    devinLoading = false;
-  }
-}
-
-function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }): void {
-  devinAccountsList.innerHTML = '';
-  if (!data.accounts || data.accounts.length === 0) {
-    devinAccountsList.innerHTML = '<div class="devin-accounts-empty">No accounts yet; add one below</div>';
-    devinCurrentLabel.textContent = 'Current: none';
-    return;
-  }
-  const cur = data.accounts[data.currentIndex];
-  devinCurrentLabel.textContent = `Current: ${cur ? cur.email.split('@')[0] : 'none'}`;
-
-  for (let i = 0; i < data.accounts.length; i++) {
-    const acc = data.accounts[i];
-    const isActive = i === data.currentIndex;
-
-    // Status dot
-    let dotClass = 'idle';
-    if (acc.lastLogin && !acc.lastError) dotClass = 'ok';
-    else if (acc.lastError) dotClass = 'err';
-
-    // Quota
-    const quota = acc.quota;
-    let quotaText = '--';
-    let quotaClass = '';
-    if (quota) {
-      quotaText = `D${quota.daily}% W${quota.weekly}%`;
-      if (quota.daily <= 10 || quota.weekly <= 10) quotaClass = ' low';
-    }
-
-    const item = document.createElement('div');
-    item.className = 'devin-account-item' + (isActive ? ' active' : '');
-
-    // Time info
-    let meta = '';
-    if (acc.planName) meta = acc.planName;
-    if (acc.lastLogin) {
-      const d = new Date(acc.lastLogin);
-      meta += (meta ? ' · ' : '') + `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
-    }
-    if (acc.lastError) meta = `❌ ${acc.lastError.slice(0, 30)}`;
-
-    item.innerHTML = `
-      <div class="devin-account-top">
-        <div class="devin-account-dot ${dotClass}"></div>
-        <span class="devin-account-email">${escHtml(acc.email)}</span>
-        <span class="devin-account-quota-tag${quotaClass}">${quotaText}</span>
-      </div>
-      <div class="devin-account-bottom">
-        <span class="devin-account-meta">${escHtml(meta)}</span>
-        <div class="devin-account-actions">
-          <button class="devin-quota-one-btn" title="Refresh quota">&#8635;</button>
-          <button class="devin-switch-btn" ${isActive ? 'disabled' : ''}>Switch</button>
-          <button class="devin-delete-btn">Delete</button>
-        </div>
-      </div>
-    `;
-
-    // Switch button
-    const switchBtn = item.querySelector('.devin-switch-btn') as HTMLButtonElement;
-    switchBtn.addEventListener('click', async () => {
-      switchBtn.textContent = 'Switching...';
-      switchBtn.disabled = true;
-      try {
-        const result = await window.posse.devinAccountsSwitch({ email: acc.email });
-        if (result.ok) {
-          switchBtn.textContent = '✓';
-          await refreshDevinAccounts();
-        } else {
-          switchBtn.textContent = 'Failed';
-          alert('Switch failed: ' + (result.error || 'Unknown error'));
-          setTimeout(() => { switchBtn.textContent = 'Switch'; switchBtn.disabled = false; }, 1500);
-        }
-      } catch {
-        switchBtn.textContent = 'Switch';
-        switchBtn.disabled = false;
-      }
-    });
-
-    // Delete button
-    const deleteBtn = item.querySelector('.devin-delete-btn') as HTMLButtonElement;
-    deleteBtn.addEventListener('click', async () => {
-      if (!confirm(`Delete account ${acc.email}?`)) return;
-      deleteBtn.textContent = '...';
-      deleteBtn.disabled = true;
-      try {
-        const result = await window.posse.devinAccountsRemove(acc.email);
-        if (result.ok) {
-          await refreshDevinAccounts();
-        } else {
-          alert('Delete failed: ' + (result.error || 'Unknown error'));
-          deleteBtn.textContent = 'Delete';
-          deleteBtn.disabled = false;
-        }
-      } catch {
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.disabled = false;
-      }
-    });
-
-    // Per-account refresh-quota button
-    const quotaOneBtn = item.querySelector('.devin-quota-one-btn') as HTMLButtonElement;
-    quotaOneBtn.addEventListener('click', async () => {
-      quotaOneBtn.disabled = true;
-      quotaOneBtn.textContent = '...';
-      try {
-        const result = await window.posse.devinAccountsQuotaOne(acc.email);
-        if (result.ok) {
-          quotaOneBtn.textContent = '✓';
-          await refreshDevinAccounts();
-          setTimeout(() => { quotaOneBtn.innerHTML = '&#8635;'; quotaOneBtn.disabled = false; }, 2000);
-        } else {
-          quotaOneBtn.innerHTML = '&#8635;';
-          quotaOneBtn.disabled = false;
-          alert('Query failed: ' + (result.error || 'Unknown error'));
-        }
-      } catch {
-        quotaOneBtn.innerHTML = '&#8635;';
-        quotaOneBtn.disabled = false;
-      }
-    });
-
-    devinAccountsList.appendChild(item);
-  }
-}
-
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// Refresh button
-devinRefreshBtn.addEventListener('click', () => refreshDevinAccounts());
-
-// Quota query
-devinQuotaBtn.addEventListener('click', async () => {
-  devinQuotaBtn.disabled = true;
-  devinQuotaBtn.textContent = 'Querying...';
-  try {
-    const result = await window.posse.devinAccountsQuota();
-    if (result.ok) {
-      devinQuotaBtn.textContent = `D${result.daily}% W${result.weekly}%`;
-      await refreshDevinAccounts();
-      setTimeout(() => { devinQuotaBtn.textContent = 'Quota'; }, 5000);
-    } else {
-      devinQuotaBtn.textContent = 'Failed';
-      setTimeout(() => { devinQuotaBtn.textContent = 'Quota'; }, 2000);
-    }
-  } catch {
-    devinQuotaBtn.textContent = 'Quota';
-  } finally {
-    devinQuotaBtn.disabled = false;
-  }
-});
-
-// Refresh all quotas
-devinQuotaAllBtn.addEventListener('click', async () => {
-  devinQuotaAllBtn.disabled = true;
-  devinQuotaAllBtn.textContent = 'Refreshing...';
-  try {
-    const result = await window.posse.devinAccountsQuotaAll();
-    if (result.ok) {
-      const total = result.results?.length || 0;
-      const success = result.results?.filter(r => r.ok).length || 0;
-      devinQuotaAllBtn.textContent = `${success}/${total} done`;
-      await refreshDevinAccounts();
-      setTimeout(() => { devinQuotaAllBtn.textContent = 'Refresh All Quotas'; }, 4000);
-    } else {
-      devinQuotaAllBtn.textContent = 'Failed';
-      setTimeout(() => { devinQuotaAllBtn.textContent = 'Refresh All Quotas'; }, 2000);
-    }
-  } catch {
-    devinQuotaAllBtn.textContent = 'Refresh All Quotas';
-  } finally {
-    devinQuotaAllBtn.disabled = false;
-  }
-});
-
-// Add account
-devinAddBtn.addEventListener('click', async () => {
-  const email = devinAddEmail.value.trim();
-  const password = devinAddPassword.value.trim();
-  if (!email || !password) return;
-  devinAddBtn.textContent = 'Adding...';
-  devinAddBtn.disabled = true;
-  try {
-    const result = await window.posse.devinAccountsAdd(email, password);
-    if (result.ok) {
-      devinAddEmail.value = '';
-      devinAddPassword.value = '';
-      devinAddBtn.textContent = '✓ Added';
-      await refreshDevinAccounts();
-    } else {
-      devinAddBtn.textContent = 'Failed';
-      alert('Add failed: ' + (result.error || 'Unknown error'));
-    }
-  } catch {
-    devinAddBtn.textContent = 'Failed';
-  }
-  setTimeout(() => { devinAddBtn.textContent = 'Add Account'; devinAddBtn.disabled = false; }, 1500);
-});
-
-// Bulk add accounts
-devinBatchBtn.addEventListener('click', async () => {
-  const text = devinBatchInput.value.trim();
-  if (!text) return;
-  // Basic validation: must contain at least one @
-  if (!text.includes('@')) {
-    alert('Please enter valid account data (one per line: email password)');
-    return;
-  }
-  devinBatchBtn.textContent = 'Importing...';
-  devinBatchBtn.disabled = true;
-  try {
-    const result = await window.posse.devinAccountsAddBatch(text);
-    if (result.ok) {
-      devinBatchInput.value = '';
-      devinBatchBtn.textContent = '✓ Done';
-      await refreshDevinAccounts();
-      // Show summary stats
-      // NOTE: matches the CLI output prefix "已添加" produced by the backend; keep as-is
-      if (result.output) {
-        const statsMatch = result.output.match(/已添加\s*\d+\s*\|.*/);
-        if (statsMatch) {
-          devinBatchBtn.textContent = statsMatch[0];
-        }
-      }
-    } else {
-      devinBatchBtn.textContent = 'Failed';
-      alert('Bulk import failed: ' + (result.error || 'Unknown error'));
-    }
-  } catch {
-    devinBatchBtn.textContent = 'Failed';
-  }
-  setTimeout(() => { devinBatchBtn.textContent = 'Bulk Import'; devinBatchBtn.disabled = false; }, 3000);
 });
