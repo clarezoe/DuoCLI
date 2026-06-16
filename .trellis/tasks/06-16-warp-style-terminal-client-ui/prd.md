@@ -4,6 +4,47 @@
 
 Redesign the **desktop main renderer** (`src/renderer/`) session+terminal workspace into a Warp/Codex-inspired layout so the user can: (1) see all live terminals and resume them, (2) clearly tell what each terminal is doing (label + agent + folder + status), grouped by agent/folder, (3) work in the main window, and (4) preview document/file contents in a side panel. Inspired-by, not a code copy. Single-agent is the common case; multi-agent is occasional.
 
+## ⭐ CORRECTED SPEC (2026-06-17) — Projects-first, Conductor/Codex-style layout (AUTHORITATIVE)
+
+The earlier "enhance the existing session rail with a group-by toggle" interpretation was
+WRONG. The user wants a full **Projects-first** layout like Conductor / Codex / Copilot
+(screenshots provided). This section supersedes the older Requirements below.
+
+**LEFT panel — "Projects"**
+* A list of PROJECTS (folders), each row = one folder (e.g. DuoCLI, cc-proxy).
+* Top of panel: a "+" to ADD a project — dropdown "Start from scratch" / "Use an existing folder".
+* Each project row has its own "+" button → dropdown to START A NEW SESSION choosing the agent
+  (Claude Code / Codex / Kiro / Copilot / …). Picking one opens a new terminal in that folder
+  running that agent.
+* Expand a project (DEFAULT COLLAPSED) → shows that folder's PAST SESSIONS for ALL agents,
+  **grouped by agent**, each session row showing a **title + session time**.
+* Click a past session → **RESUME it and open in the CENTER pane** (reattach if live, else run the
+  agent's resume command). NOT a new window.
+
+**CENTER pane** — the currently open/active session (xterm terminal).
+
+**RIGHT panel** — the selected project's folder: file tree + read-only file preview (already built).
+
+**Multi-agent session history sources** (from research/agent-session-formats.md):
+* Claude Code — `~/.claude/projects/<enc>/<uuid>.jsonl`; real cwd from in-file `cwd` field; title
+  from `ai-title`; resume `claude --resume <uuid>`. ✅ feasible.
+* Codex — `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`; cwd from line-1
+  `session_meta.payload.cwd`; title from first user msg; resume `codex resume <uuid>`. ✅ (read only
+  line 1 for perf; archived_sessions has ~76k files — cap/scan carefully).
+* Kiro — `~/.kiro/sessions/cli/<uuid>.json` sidecar (cwd/title/time) + `.jsonl`; resume
+  `kiro-cli chat --resume-id <uuid>`. ✅ cleanest.
+* Copilot — `~/.copilot/session-store.db` sqlite (`sessions` table); cwd UNRELIABLE (often `/`);
+  resume `copilot --resume <id>` UNVERIFIED (binary absent). ⚠️ partial — include best-effort, flag.
+* Gemini — per-project index resume only, no global session id. ❌ NOT feasible — exclude from MVP.
+
+**Project list source**: union of folders discovered across all agents' session stores (bucket
+sessions by absolute cwd) + folders the user explicitly adds. Persist the user-added project list.
+
+**Key correction vs what was built**: current code groups SESSIONS (DuoCLI's own PTY list) by
+agent/folder and only reads Claude history as a flat section. The redesign makes PROJECT (folder)
+the top level, with per-agent session history nested under each project, multi-agent, default
+collapsed, time-stamped, click-to-open-in-center, and a per-project new-session agent dropdown.
+
 ## What I already know
 
 * Target = **main Electron renderer** (`src/renderer/app.ts`, `index.html`, `styles.css`), NOT the daemon-served standalone web client (`src/terminal-client/`), NOT mobile remote.
@@ -98,6 +139,23 @@ and one-click resume them. Start with Claude Code.
 * Refresh when the file-tree root cwd changes + a manual refresh control.
 * Cap ~40 newest by mtime; guard title parsing on very large files.
 * Extensible later to other agents (codex etc.); MVP = Claude only.
+
+## Major Redesign (clarified with reference images) — Codex-style project navigator
+
+Target layout: **Sessions (left) | Terminal (center) | File tree + editable editor (right)**.
+The left sidebar becomes a Codex-style project explorer (see user's Codex screenshots):
+
+* Sections **Pinned** and **Projects**. Each entry = a PROJECT (a folder the user added).
+* Project row: folder icon + name + chevron (default **collapsed**), with hover/row actions `...`, edit (✏️), and a **new-conversation** button.
+* The **Projects** header has: collapse-all, `...`, and **add-project** (folder picker) buttons.
+* Expanding a project lists that project's sessions **grouped by agent** (Claude / Codex / Copilot / Kiro / …), agent groups default collapsed.
+* Each session row: title + **relative time** (e.g. `2d`, `6h`). Click → open that session's terminal in the CENTER (live → switch/attach; history → `claude --resume <id>` etc.).
+* **New conversation**: the per-project button opens an **agent picker** (Codex / Claude Code / Copilot / Kiro / custom presets) → creates a new terminal in that project's cwd with the chosen agent preset.
+* Projects are persisted and pinnable (`posse_projects` store).
+* Session sources per project: DuoCLI live PTY sessions in that cwd + DuoCLI closed-session history + Claude native history (`claude-sessions:list`). Codex/Copilot/Kiro native history = later.
+
+Stage 1 (this iteration): left project navigator + layout (sessions left, terminal center).
+Stage 2 (next): move file tree to the RIGHT and make the file panel an EDITABLE editor (`fs:write-file` IPC + Cmd+S save), replacing the read-only preview.
 
 ## Reuse Map (already in codebase — confirmed via investigation)
 

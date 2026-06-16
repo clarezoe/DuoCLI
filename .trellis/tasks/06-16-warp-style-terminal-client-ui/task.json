@@ -15,7 +15,7 @@
   "branch": null,
   "base_branch": "feat/copilot-cli-support",
   "worktree_path": null,
-  "commit": null,
+  "commit": "4e31eec",
   "pr_url": null,
   "subtasks": [],
   "children": [],
