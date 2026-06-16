@@ -2,14 +2,14 @@ import * as https from 'https';
 import * as http from 'http';
 
 export interface AIProvider {
-  id: string;          // 唯一标识
-  name: string;        // 显示名称
+  id: string;          // Unique identifier
+  name: string;        // Display name
   apiKey: string;      // API key
   baseUrl: string;     // endpoint
-  model: string;       // 当前选中模型
-  availableModels: string[];  // 可选模型列表
-  source: string;      // 配置来源
-  apiFormat: 'anthropic' | 'openai' | 'gemini' | 'ollama';  // API 格式
+  model: string;       // Currently selected model
+  availableModels: string[];  // Available model list
+  source: string;      // Config source
+  apiFormat: 'anthropic' | 'openai' | 'gemini' | 'ollama';  // API format
   status: 'pending' | 'ok' | 'fail';
   errorMsg?: string;
 }
@@ -20,7 +20,7 @@ interface TestDef {
   authStyle: 'anthropic' | 'bearer' | 'gemini-query' | 'none';
 }
 
-// 各 provider 的测试定义
+// Test definition per provider
 const TEST_DEFS: Record<string, TestDef> = {
   anthropic: { testPath: '/v1/messages', testMethod: 'POST', authStyle: 'anthropic' },
   codex:     { testPath: '/v1/models', testMethod: 'GET', authStyle: 'bearer' },
@@ -35,7 +35,7 @@ const TEST_DEFS: Record<string, TestDef> = {
 export class AIConfigManager {
   private providers: AIProvider[] = [];
 
-  // 不再自动扫描，返回空列表（由用户手工填写 baseUrl 和 apiKey）
+  // No longer auto-scans; returns an empty list (user manually fills in baseUrl and apiKey)
   async scan(): Promise<AIProvider[]> {
     this.providers = [];
     return this.providers;
@@ -45,17 +45,17 @@ export class AIConfigManager {
     return this.providers;
   }
 
-  // ========== 测试连通性 ==========
+  // ========== Connectivity test ==========
 
   async testProvider(provider: AIProvider): Promise<AIProvider> {
-    // 没有有效 apiKey 的直接标记失败（OAuth 类型、空 key），Ollama 除外
+    // Mark as failed when there is no valid apiKey (OAuth type, empty key), except Ollama
     if (provider.apiFormat !== 'ollama' && (!provider.apiKey || provider.apiKey === '(OAuth)')) {
       provider.status = 'fail';
-      provider.errorMsg = '无有效 API Key';
+      provider.errorMsg = 'No valid API Key';
       return provider;
     }
 
-    // 根据 id 找测试定义，fallback 到通用
+    // Look up the test definition by id, falling back to a generic one
     let def = TEST_DEFS[provider.id];
     if (!def) {
       if (provider.baseUrl.includes('anthropic') || provider.baseUrl.includes('claude')) {
@@ -71,7 +71,7 @@ export class AIConfigManager {
       provider.errorMsg = result.ok ? undefined : result.error;
     } catch (e: any) {
       provider.status = 'fail';
-      provider.errorMsg = e.message || '连接失败';
+      provider.errorMsg = e.message || 'Connection failed';
     }
     return provider;
   }
@@ -87,7 +87,7 @@ export class AIConfigManager {
   ): Promise<{ ok: boolean; error?: string }> {
     return new Promise((resolve) => {
       let baseUrl = provider.baseUrl;
-      // 确保 baseUrl 是合法 URL
+      // Ensure baseUrl is a valid URL
       if (!baseUrl.startsWith('http')) baseUrl = 'https://' + baseUrl;
 
       const url = new URL(baseUrl);
@@ -131,7 +131,7 @@ export class AIConfigManager {
       });
 
       req.on('error', (e) => resolve({ ok: false, error: e.message }));
-      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: '连接超时' }); });
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Connection timed out' }); });
 
       if (def.authStyle === 'anthropic' && def.testMethod === 'POST') {
         req.write(JSON.stringify({
@@ -146,7 +146,7 @@ export class AIConfigManager {
   }
 
   static maskKey(key: string): string {
-    if (!key || key === '(OAuth)') return key || '(无)';
+    if (!key || key === '(OAuth)') return key || '(none)';
     if (key.length <= 8) return '****';
     return key.substring(0, 4) + '****' + key.substring(key.length - 4);
   }

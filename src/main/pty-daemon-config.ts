@@ -9,10 +9,10 @@ export interface PtyDaemonConfig {
   pid?: number;
 }
 
-const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.duocli');
-const CONFIG_FILE = process.env.DUOCLI_PTY_DAEMON_CONFIG || path.join(DEFAULT_CONFIG_DIR, 'pty-daemon.json');
+const DEFAULT_CONFIG_DIR = path.join(os.homedir(), '.posse');
+const CONFIG_FILE = process.env.POSSE_PTY_DAEMON_CONFIG || path.join(DEFAULT_CONFIG_DIR, 'pty-daemon.json');
 const CONFIG_DIR = path.dirname(CONFIG_FILE);
-const DEFAULT_PORT = Number(process.env.DUOCLI_PTY_DAEMON_PORT || '9811');
+const DEFAULT_PORT = Number(process.env.POSSE_PTY_DAEMON_PORT || '9811');
 
 export function getPtyDaemonConfigPath(): string {
   return CONFIG_FILE;

@@ -18,7 +18,7 @@ type PtySessionInfo = {
 
 declare global {
   interface Window {
-    duocli: {
+    posse: {
       setWindowTitle: (title: string) => void;
       createPty: (cwd: string, presetCommand: string, themeId: string) => Promise<PtySessionInfo>;
       writePty: (id: string, data: string) => void;
@@ -30,6 +30,7 @@ declare global {
       selectFolder: (currentPath?: string) => Promise<string | null>;
       fileTreeListDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDir: boolean }>>;
       readFile: (filePath: string) => Promise<{ ok: boolean; content?: string; size?: number; ext?: string; error?: string }>;
+      claudeSessionsList: (cwd: string) => Promise<Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: 'claude' | 'codex'; resumeCommand: string }>>;
       remoteAddRecentCwd: (cwd: string) => Promise<boolean>;
       onPtyData: (cb: (id: string, data: string) => void) => void;
       onTitleUpdate: (cb: (id: string, title: string) => void) => void;
@@ -39,7 +40,7 @@ declare global {
       getRemoteServerInfo: () => Promise<{ lanUrl: string; token: string; port: number; publicUrl?: string; tunnel?: { running: boolean; url: string; message?: string } } | null>;
       clipboardSaveImage: () => Promise<string | null>;
       clipboardGetFilePath: () => Promise<string | null>;
-      // 文件监听 API
+      // File watcher API
       filewatcherStart: (cwd: string) => Promise<void>;
       filewatcherStop: () => Promise<void>;
       filewatcherOpen: (filePath: string) => Promise<OpenEditorResult>;
@@ -50,15 +51,15 @@ declare global {
       getAppVersion: () => Promise<string>;
       getTerminalClientUrl: () => Promise<string>;
       onFileChange: (cb: (filename: string, eventType: string) => void) => void;
-      // AI 配置 API
+      // AI config API
       aiApplyConfig: (config: { apiFormat: string; baseUrl: string; apiKey: string; model: string }) => Promise<boolean>;
       aiTestConfig: (config: { apiFormat: string; baseUrl: string; apiKey: string; model: string }) => Promise<{ ok: boolean; error?: string; response?: string }>;
       aiGetCurrentConfig: () => Promise<{ apiFormat: string; baseUrl: string; apiKey: string; model: string; providerId: string | null } | null>;
       getCliProvider: (presetCommand: string) => Promise<string | null>;
-      // Claude 供应商配置
+      // Claude provider config
       claudeProvidersList: () => Promise<Array<{ id: string; name: string; baseUrl: string; apiKey: string; model?: string }>>;
       claudeProvidersSave: (providers: Array<{ id: string; name: string; baseUrl: string; apiKey: string; model?: string }>) => Promise<boolean>;
-      // Devin 账号管理
+      // Devin account management
       devinAccountsList: () => Promise<{ accounts: Array<{ email: string; enabled: boolean; addedAt: number; lastLogin?: string; lastError?: string; quota?: { daily: number; weekly: number }; planName?: string; lastSwitchAt?: number }>; currentIndex: number }>;
       devinAccountsAdd: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
       devinAccountsAddBatch: (text: string) => Promise<{ ok: boolean; output?: string; error?: string }>;
@@ -68,12 +69,12 @@ declare global {
       devinAccountsQuotaAll: () => Promise<{ ok: boolean; results?: Array<{ email: string; ok: boolean; quota?: { daily: number; weekly: number; planName?: string }; error?: string }>; error?: string }>;
       devinAccountsQuotaOne: (email: string) => Promise<{ ok: boolean; daily?: number; weekly?: number; planName?: string; error?: string }>;
       devinAccountsRotateDevice: () => Promise<{ ok: boolean }>;
-      // 文件操作
+      // File operations
       openFile: (filePath: string) => Promise<void>;
       readDirectory: (dirPath: string) => Promise<Array<{ name: string; isDirectory: boolean; isFile: boolean }>>;
-      // 会话状态同步
+      // Session status sync
       syncSessionStatus: (statuses: Record<string, string>) => void;
-      // 催工配置中转
+      // Auto-continue config relay
       onGetAutoContinueConfig: (cb: (sessionId: string) => void) => void;
       sendAutoContinueConfig: (sessionId: string, config: any) => void;
       onSetAutoContinueConfig: (cb: (sessionId: string, config: any) => void) => void;
@@ -91,49 +92,49 @@ declare global {
       onChatDone: (cb: (sessionId: string, content: string) => void) => void;
       onChatError: (cb: (sessionId: string, error: string) => void) => void;
       onChatTitleUpdate: (cb: (sessionId: string, title: string) => void) => void;
-      // 已关闭会话
+      // Closed sessions
       closedSessionsList: () => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
       closedSessionsRemove: (id: string) => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
       closedSessionsRename: (id: string, title: string) => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
       closedSessionsClear: () => Promise<Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>>;
       onClosedSessionsUpdate: (cb: (sessions: Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>) => void) => void;
-      // 已关闭 Chat 会话
+      // Closed chat sessions
       closedChatList: () => Promise<Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>>;
       closedChatRemove: (id: string) => Promise<Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>>;
       closedChatClear: () => Promise<Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>>;
       chatRestore: (closedId: string) => Promise<{ id: string; title: string; model: string; workspace: string; createdAt: number } | null>;
       onClosedChatUpdate: (cb: (sessions: Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>) => void) => void;
-      // 自动切号状态
+      // Auto account-switch status
       onAutoSwitchStatus: (cb: (id: string, status: string, detail?: string) => void) => void;
       onCloseCurrentSession: (cb: () => void) => void;
     };
   }
 }
 
-// 状态
-const savedCwd = localStorage.getItem('duocli_cwd') || '';
+// State
+const savedCwd = localStorage.getItem('posse_cwd') || '';
 let currentCwd = savedCwd;
-let lastPreset = localStorage.getItem('duocli_preset') || '';
+let lastPreset = localStorage.getItem('posse_preset') || '';
 const sessionTitles: Map<string, string> = new Map();
 const sessionThemes: Map<string, string> = new Map();
 const sessionUpdateTimes: Map<string, number> = new Map();
 const sessionCreateTimes: Map<string, number> = new Map();
-// 会话工作目录
+// Session working directory
 const sessionCwds: Map<string, string> = new Map();
-// 会话显示名称（如 Claude全自动、Codex 等）
+// Session display name (e.g. Claude auto, Codex)
 const sessionDisplayNames: Map<string, string> = new Map();
-// 会话实际使用的模型提供商（如 MiniMax、GLM、Anthropic 等）
+// Actual model provider used by the session (e.g. MiniMax, GLM, Anthropic)
 const sessionProviders: Map<string, string> = new Map();
-// 每个会话使用的自定义供应商 ID（用于切换终端时恢复选择）
+// Custom provider ID used by each session (to restore selection when switching terminals)
 const sessionClaudeProviderIds: Map<string, string> = new Map();
 
-// ========== Chat 会话状态 ==========
+// ========== Chat session state ==========
 const chatViews: Map<string, ChatView> = new Map();
 const chatSessionTitles: Map<string, string> = new Map(); // chat session id → title
 const chatSessionCreateTimes: Map<string, number> = new Map();
 let activeChatId: string | null = null;
 
-// ========== 已关闭会话（可恢复） ==========
+// ========== Closed sessions (resumable) ==========
 interface ClosedSessionInfo {
   id: string;
   title: string;
@@ -147,19 +148,25 @@ interface ClosedSessionInfo {
 let closedSessions: ClosedSessionInfo[] = [];
 let closedSessionsCollapsed = false;
 
-// 会话分组方式：按 agent（默认）或按目录
+// Native agent session history (Claude / Codex) for the currently opened directory
+type ClaudeHistorySession = { id: string; title: string; cwd: string; mtimeMs: number; agent: 'claude' | 'codex'; resumeCommand: string };
+let claudeHistorySessions: ClaudeHistorySession[] = [];
+let claudeHistoryCollapsed = false;
+let claudeHistoryCwd = '';
+
+// Session grouping mode: by agent (default) or by folder
 type SessionGroupMode = 'agent' | 'folder';
 let sessionGroupMode: SessionGroupMode = (localStorage.getItem('sessionGroupMode') as SessionGroupMode) || 'agent';
 
-// 返回某个存活会话的分组键（agent 模式用 displayName，folder 模式用归一化 cwd）
+// Return the grouping key for a live session (agent mode uses displayName, folder mode uses normalized cwd)
 function sessionGroupKey(id: string): string {
   if (sessionGroupMode === 'agent') {
-    return sessionDisplayNames.get(id) || '其他';
+    return sessionDisplayNames.get(id) || 'Other';
   }
   return normalizeCwd(sessionCwds.get(id) || '');
 }
 
-// ========== 已关闭 Chat 会话（可恢复） ==========
+// ========== Closed chat sessions (resumable) ==========
 interface ClosedChatSessionInfo {
   id: string;
   title: string;
@@ -170,18 +177,18 @@ interface ClosedChatSessionInfo {
 }
 let closedChatSessions: ClosedChatSessionInfo[] = [];
 
-// 自动切号状态：sessionId → { status, detail }
+// Auto account-switch status: sessionId → { status, detail }
 const sessionAutoSwitchStatus: Map<string, { status: string; detail?: string }> = new Map();
 
-// 自动继续配置
+// Auto-continue config
 const sessionAutoContinue: Map<string, { enabled: boolean; messages: string[]; intervalMs: number; commandIntervalMs: number; lastSendTime: number; autoAgree: boolean; autoAgreeDelaySec: number; sendDelaySec: number; maxDurationMs: number; enabledAt: number }> = new Map();
-const AUTO_CONTINUE_DEFAULT_MESSAGES = ['继续'];
-const AUTO_CONTINUE_DEFAULT_INTERVAL = 10 * 60 * 1000; // 10 分钟
-const AUTO_CONTINUE_DEFAULT_COMMAND_INTERVAL = 2000; // 命令间隔 2 秒
-const AUTO_AGREE_DEFAULT_DELAY_SEC = 5; // 自动同意默认延后 5 秒
-const AUTO_CONTINUE_SEND_DELAY_SEC = 2; // 发送回车前默认延迟 2 秒
-const AUTO_CONTINUE_DEFAULT_MAX_DURATION = 0; // 0 表示不限制
-const AUTO_CONTINUE_STORAGE_KEY = 'duocli_auto_continue';
+const AUTO_CONTINUE_DEFAULT_MESSAGES = ['continue'];
+const AUTO_CONTINUE_DEFAULT_INTERVAL = 10 * 60 * 1000; // 10 minutes
+const AUTO_CONTINUE_DEFAULT_COMMAND_INTERVAL = 2000; // 2-second command interval
+const AUTO_AGREE_DEFAULT_DELAY_SEC = 5; // auto-approve default delay: 5 seconds
+const AUTO_CONTINUE_SEND_DELAY_SEC = 2; // default delay before sending Enter: 2 seconds
+const AUTO_CONTINUE_DEFAULT_MAX_DURATION = 0; // 0 means no limit
+const AUTO_CONTINUE_STORAGE_KEY = 'posse_auto_continue';
 
 function hasSessionInUI(sessionId: string): boolean {
   return sessionTitles.has(sessionId);
@@ -195,11 +202,11 @@ function getSessionCreateTime(id: string): number {
   return fallback;
 }
 
-// 持久化催工配置到 localStorage
+// Persist auto-continue config to localStorage
 function saveAutoContinueToStorage(): void {
   const data: Record<string, any> = {};
   sessionAutoContinue.forEach((config, sessionId) => {
-    // lastSendTime / enabledAt 是运行时状态，不持久化
+    // lastSendTime / enabledAt are runtime state, not persisted
     data[sessionId] = {
       enabled: config.enabled,
       messages: config.messages,
@@ -214,14 +221,14 @@ function saveAutoContinueToStorage(): void {
   localStorage.setItem(AUTO_CONTINUE_STORAGE_KEY, JSON.stringify(data));
 }
 
-// 从 localStorage 恢复催工配置
+// Restore auto-continue config from localStorage
 function loadAutoContinueFromStorage(): void {
   try {
     const raw = localStorage.getItem(AUTO_CONTINUE_STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw) as Record<string, any>;
     for (const [sessionId, config] of Object.entries(data)) {
-      // 兼容旧版 message → messages 迁移
+      // Migrate legacy message → messages
       const msgs = Array.isArray(config.messages)
         ? config.messages
         : (config.message ? [config.message] : [...AUTO_CONTINUE_DEFAULT_MESSAGES]);
@@ -241,31 +248,31 @@ function loadAutoContinueFromStorage(): void {
   } catch {}
 }
 
-// 启动时恢复催工配置并启动定时器
+// Restore auto-continue config and start the timer on launch
 loadAutoContinueFromStorage();
-// 旧逻辑会无条件清空磁盘配置，导致用户的催工设置永远丢失。
-// 现状：冷启动时 sessionTitles 为空 → loadAutoContinueFromStorage 写入的旧 session-id 配置
-// 不会命中任何当前会话，定时器自然 no-op；当 onRemoteCreated/createPty 创建新会话时
-// 会通过 onSetAutoContinueConfig 同步推送新配置覆盖旧条目。
-// 检查是否有启用的配置，如果有则启动定时器
+// The old logic unconditionally wiped the on-disk config, permanently losing the user's auto-continue settings.
+// Current behavior: on cold start sessionTitles is empty → the old session-id configs written by
+// loadAutoContinueFromStorage match no current session, so the timer is a no-op. When onRemoteCreated/createPty
+// creates a new session, onSetAutoContinueConfig pushes the new config and overrides the old entries.
+// Check whether any config is enabled, and start the timer if so
 const hasEnabledConfig = Array.from(sessionAutoContinue.values()).some(c => c.enabled);
 if (hasEnabledConfig) initAutoContinueTimer();
 
-// 自动继续定时器
+// Auto-continue timer
 let autoContinueTimer: ReturnType<typeof setInterval> | null = null;
 
-// 写入 PTY 并重置自动继续计时器
+// Write to the PTY and reset the auto-continue timer
 function writePtyWithAutoReset(id: string, data: string): void {
   termManager.notifyInput(id);
-  window.duocli.writePty(id, data);
-  // 重置该会话的自动继续计时器
+  window.posse.writePty(id, data);
+  // Reset this session's auto-continue timer
   const config = sessionAutoContinue.get(id);
   if (config && config.enabled) {
     config.lastSendTime = Date.now();
   }
 }
 
-// 初始化自动继续定时器
+// Initialize the auto-continue timer
 function initAutoContinueTimer(): void {
   if (autoContinueTimer) {
     clearInterval(autoContinueTimer);
@@ -279,32 +286,32 @@ function initAutoContinueTimer(): void {
         staleSessionIds.push(sessionId);
         return;
       }
-      // 检查最大持续时间，超时自动关闭催工
+      // Check max duration; auto-stop the loop on timeout
       if (config.maxDurationMs > 0 && config.enabledAt > 0 && (now - config.enabledAt >= config.maxDurationMs)) {
-        console.log(`[循环] 会话 ${sessionId} 已达最大持续时间 ${config.maxDurationMs}ms，自动关闭催工`);
+        console.log(`[Loop] Session ${sessionId} reached max duration ${config.maxDurationMs}ms, auto-stopping loop`);
         config.enabled = false;
         saveAutoContinueToStorage();
         renderSessionList();
         return;
       }
-      // 检查是否超时
+      // Check whether the interval has elapsed
       if (now - config.lastSendTime >= config.intervalMs) {
         const messages = config.messages || AUTO_CONTINUE_DEFAULT_MESSAGES;
         const cmdInterval = config.commandIntervalMs ?? AUTO_CONTINUE_DEFAULT_COMMAND_INTERVAL;
         const sendDelay = (config.sendDelaySec ?? AUTO_CONTINUE_SEND_DELAY_SEC) * 1000;
-        console.log(`[循环] 准备发送 ${messages.length} 条命令到会话 ${sessionId}`);
+        console.log(`[Loop] Sending ${messages.length} command(s) to session ${sessionId}`);
 
-        // 依次发送每条命令，命令之间有间隔
+        // Send each command in order, with an interval between commands
         let cmdIdx = 0;
         const sendNextCommand = () => {
           if (cmdIdx >= messages.length) {
-            console.log(`[循环] 已发送全部 ${messages.length} 条命令`);
+            console.log(`[Loop] Sent all ${messages.length} command(s)`);
             return;
           }
           const msg = messages[cmdIdx];
           cmdIdx++;
-          window.duocli.writePty(sessionId, msg);
-          // 延迟发送回车
+          window.posse.writePty(sessionId, msg);
+          // Send Enter after a delay
           setTimeout(() => {
             const enterKeys = [
               '\r', '\n', '\r\n', '\x0d', '\x0a', '\x1b\n', '\x1b\r',
@@ -312,11 +319,11 @@ function initAutoContinueTimer(): void {
             let ei = 0;
             const sendNextEnter = () => {
               if (ei < enterKeys.length) {
-                window.duocli.writePty(sessionId, enterKeys[ei]);
+                window.posse.writePty(sessionId, enterKeys[ei]);
                 ei++;
                 setTimeout(sendNextEnter, 15);
               } else {
-                // 这条命令回车完成，发送下一条命令
+                // Enter sent for this command; move to the next command
                 setTimeout(sendNextCommand, cmdInterval);
               }
             };
@@ -332,10 +339,10 @@ function initAutoContinueTimer(): void {
       saveAutoContinueToStorage();
       renderSessionList();
     }
-  }, 1000); // 每秒检查一次
+  }, 1000); // Check once per second
 }
 
-// 切换自动继续开关
+// Toggle the auto-continue switch
 function toggleAutoContinue(sessionId: string, enabled: boolean): void {
   let config = sessionAutoContinue.get(sessionId);
   if (!config) {
@@ -360,14 +367,14 @@ function toggleAutoContinue(sessionId: string, enabled: boolean): void {
   }
   saveAutoContinueToStorage();
 
-  // 启动定时器（如果尚未启动）
+  // Start the timer (if not already running)
   initAutoContinueTimer();
 
-  // 重新渲染会话列表以更新开关状态
+  // Re-render the session list to reflect the switch state
   renderSessionList();
 }
 
-// 显示自动继续配置对话框
+// Show the auto-continue config dialog
 function showAutoContinueConfigDialog(sessionId: string): void {
   const config = sessionAutoContinue.get(sessionId) || {
     enabled: false,
@@ -407,7 +414,7 @@ function showAutoContinueConfigDialog(sessionId: string): void {
   const closeBtn = document.getElementById('auto-continue-dialog-close')!;
 
   messageInput.value = currentMessages.join('\n');
-  messageInput.placeholder = '每行一条命令，按顺序发送';
+  messageInput.placeholder = 'One command per line, sent in order';
   intervalInput.value = String(currentIntervalMinutes);
   if (commandIntervalInput) commandIntervalInput.value = String(currentCommandInterval);
   autoAgreeCheckbox.checked = currentAutoAgree;
@@ -416,12 +423,12 @@ function showAutoContinueConfigDialog(sessionId: string): void {
   sendDelayInput.value = String(currentSendDelay);
   maxDurationInput.value = String(currentMaxDurationMinutes);
 
-  // 根据当前状态设置按钮文字和显示
+  // Set the button label and visibility based on current state
   if (config.enabled) {
-    saveBtn.textContent = '保存';
+    saveBtn.textContent = 'Save';
     stopBtn.style.display = '';
   } else {
-    saveBtn.textContent = '保存并开启';
+    saveBtn.textContent = 'Save and Start';
     stopBtn.style.display = 'none';
   }
 
@@ -496,10 +503,10 @@ function showAutoContinueConfigDialog(sessionId: string): void {
   closeBtn.addEventListener('click', close);
 }
 
-// 当前正在编辑标题的会话 ID
+// ID of the session whose title is currently being edited
 let editingTitleId: string | null = null;
 
-// ========== 自定义预设 ==========
+// ========== Custom presets ==========
 
 interface CustomPreset {
   id: string;
@@ -514,7 +521,7 @@ interface FileTreeItem {
   isDir: boolean;
 }
 
-const CUSTOM_PRESETS_KEY = 'duocli_custom_presets';
+const CUSTOM_PRESETS_KEY = 'posse_custom_presets';
 const PRESET_SYNC_INTERVAL_MS = 30 * 1000;
 let customPresetNextId = 1;
 let presetSyncInFlight = false;
@@ -526,7 +533,7 @@ function getCustomPresets(): CustomPreset[] {
 
 function saveCustomPresets(list: CustomPreset[]): void {
   localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(list));
-  // 同步到远程服务器，供手机端读取
+  // Sync to the remote server so mobile clients can read it
   syncPresetsToServer(list);
 }
 
@@ -558,7 +565,7 @@ async function syncPresetsToServer(list: CustomPreset[]): Promise<void> {
       console.warn(`[Preset Sync] Failed to sync presets (${3 - retries}/3):`, error);
       
       if (retries > 0) {
-        // 等待 1 秒后重试
+        // Wait 1 second before retrying
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
@@ -617,18 +624,18 @@ function startPresetSyncTimer(): void {
   }, PRESET_SYNC_INTERVAL_MS);
 }
 
-// 内置 option 的 HTML（从 index.html 中提取，作为 renderPresetSelect 的基础）
+// Built-in option list (mirrors the options in index.html, used as the base for renderPresetSelect)
 const BUILTIN_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: '', label: '空终端' },
-  { value: 'claude --dangerously-skip-permissions', label: 'Claude (全自动)' },
-  { value: 'codex -c sandbox_mode="danger-full-access" -c approval="never" -c network="enabled"', label: 'Codex (全自动)' },
-  { value: 'copilot --allow-all --autopilot', label: 'Copilot (全自动)' },
-  { value: 'devin --permission-mode bypass', label: 'Devin (全自动)' },
+  { value: '', label: 'Empty Terminal' },
+  { value: 'claude --dangerously-skip-permissions', label: 'Claude (auto)' },
+  { value: 'codex -c sandbox_mode="danger-full-access" -c approval="never" -c network="enabled"', label: 'Codex (auto)' },
+  { value: 'copilot --allow-all --autopilot', label: 'Copilot (auto)' },
+  { value: 'devin --permission-mode bypass', label: 'Devin (auto)' },
   { value: 'opencode', label: 'OpenCode' },
-  { value: 'kiro-cli chat --trust-all-tools', label: 'Kiro (全自动)' },
+  { value: 'kiro-cli chat --trust-all-tools', label: 'Kiro (auto)' },
 ];
 
-// 渲染远程服务器连接信息
+// Render remote server connection info
 function renderRemoteServerInfo(): void {
   if (!remoteServerInfo) {
     remoteServerInfoEl.style.display = 'none';
@@ -649,7 +656,7 @@ function renderPresetSelect(): void {
   const prev = presetSelect.value;
   presetSelect.innerHTML = '';
 
-  // 内置选项
+  // Built-in options
   for (const opt of BUILTIN_OPTIONS) {
     const el = document.createElement('option');
     el.value = opt.value;
@@ -657,28 +664,28 @@ function renderPresetSelect(): void {
     presetSelect.appendChild(el);
   }
 
-  // 自定义预设
+  // Custom presets
   const customs = getCustomPresets();
   if (customs.length > 0) {
     const sep = document.createElement('option');
     sep.disabled = true;
-    sep.textContent = '── 自定义 ──';
+    sep.textContent = '── Custom ──';
     presetSelect.appendChild(sep);
 
     for (const p of customs) {
       const el = document.createElement('option');
       el.value = p.autoFlag ? p.command + ' ' + p.autoFlag : p.command;
-      el.textContent = p.autoFlag ? p.name + ' (全自动)' : p.name;
+      el.textContent = p.autoFlag ? p.name + ' (auto)' : p.name;
       presetSelect.appendChild(el);
     }
   }
 
-  // 恢复之前的选中值
+  // Restore the previously selected value
   presetSelect.value = prev;
-  // 如果之前的值不存在了，回退到空终端
+  // Fall back to the empty terminal if the previous value no longer exists
   if (presetSelect.selectedIndex === -1) presetSelect.value = '';
 
-  // 只在远程服务器可用时同步到服务端
+  // Only sync to the server when the remote server is available
   if (remoteServerInfo) {
     console.log('[Preset Sync] Remote server available, syncing presets');
     syncPresetsToServer(customs);
@@ -696,24 +703,24 @@ function showPresetDialog(preset?: CustomPreset): Promise<CustomPreset | null> {
 
     const isEdit = !!preset;
     dialog.innerHTML = `
-      <h3>${isEdit ? '编辑' : '新建'}自定义 CLI 预设</h3>
+      <h3>${isEdit ? 'Edit' : 'New'} Custom CLI Preset</h3>
       <div class="preset-form">
         <div class="preset-form-field">
-          <label>名称</label>
-          <input type="text" id="preset-name-input" placeholder="如 Aider、自定义 CLI 等" value="${preset?.name || ''}" />
+          <label>Name</label>
+          <input type="text" id="preset-name-input" placeholder="e.g. Aider, custom CLI" value="${preset?.name || ''}" />
         </div>
         <div class="preset-form-field">
-          <label>命令</label>
-          <input type="text" id="preset-cmd-input" placeholder="如 aider、my-cli 等" value="${preset?.command || ''}" />
+          <label>Command</label>
+          <input type="text" id="preset-cmd-input" placeholder="e.g. aider, my-cli" value="${preset?.command || ''}" />
         </div>
         <div class="preset-form-field">
-          <label>全自动参数（可选）</label>
-          <input type="text" id="preset-auto-input" placeholder="如 --yes、--yolo 等，留空表示无全自动模式" value="${preset?.autoFlag || ''}" />
+          <label>Auto flag (optional)</label>
+          <input type="text" id="preset-auto-input" placeholder="e.g. --yes, --yolo; leave empty for no auto mode" value="${preset?.autoFlag || ''}" />
         </div>
       </div>
       <div class="confirm-buttons" style="margin-top:16px">
-        <button class="btn-cancel">取消</button>
-        <button class="btn-close-confirm" style="background:var(--accent)">保存</button>
+        <button class="btn-cancel">Cancel</button>
+        <button class="btn-close-confirm" style="background:var(--accent)">Save</button>
       </div>`;
 
     overlay.appendChild(dialog);
@@ -742,7 +749,7 @@ function showPresetDialog(preset?: CustomPreset): Promise<CustomPreset | null> {
       cleanup({ id, name, command, autoFlag: autoInput.value.trim() });
     });
 
-    // Enter 键保存
+    // Enter key saves
     const handleEnter = (e: KeyboardEvent) => {
       if (e.key === 'Enter') dialog.querySelector<HTMLButtonElement>('.btn-close-confirm')!.click();
       if (e.key === 'Escape') cleanup(null);
@@ -762,13 +769,13 @@ function showPresetManageDialog(): void {
 
   function render() {
     const customs = getCustomPresets();
-    dialog.innerHTML = `<h3>管理自定义预设</h3>`;
+    dialog.innerHTML = `<h3>Manage Custom Presets</h3>`;
 
     const listEl = document.createElement('div');
     listEl.className = 'preset-manage-list';
 
     if (customs.length === 0) {
-      listEl.innerHTML = '<div class="preset-manage-empty">暂无自定义预设，点击工具栏 "+" 按钮新建</div>';
+      listEl.innerHTML = '<div class="preset-manage-empty">No custom presets yet. Click the "+" button in the toolbar to create one.</div>';
     } else {
       for (const p of customs) {
         const item = document.createElement('div');
@@ -781,7 +788,7 @@ function showPresetManageDialog(): void {
         nameEl.textContent = p.name;
         const cmdEl = document.createElement('div');
         cmdEl.className = 'preset-manage-item-cmd';
-        cmdEl.textContent = p.command + (p.autoFlag ? ` (全自动: ${p.autoFlag})` : '');
+        cmdEl.textContent = p.command + (p.autoFlag ? ` (auto: ${p.autoFlag})` : '');
         info.appendChild(nameEl);
         info.appendChild(cmdEl);
 
@@ -789,7 +796,7 @@ function showPresetManageDialog(): void {
         actions.className = 'preset-manage-item-actions';
 
         const editBtn = document.createElement('button');
-        editBtn.textContent = '编辑';
+        editBtn.textContent = 'Edit';
         editBtn.addEventListener('click', async () => {
           const edited = await showPresetDialog(p);
           if (edited) {
@@ -803,7 +810,7 @@ function showPresetManageDialog(): void {
 
         const delBtn = document.createElement('button');
         delBtn.className = 'danger';
-        delBtn.textContent = '删除';
+        delBtn.textContent = 'Delete';
         delBtn.addEventListener('click', () => {
           const list = getCustomPresets().filter(x => x.id !== p.id);
           saveCustomPresets(list);
@@ -826,7 +833,7 @@ function showPresetManageDialog(): void {
     btns.style.marginTop = '16px';
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn-cancel';
-    closeBtn.textContent = '关闭';
+    closeBtn.textContent = 'Close';
     closeBtn.addEventListener('click', () => overlay.remove());
     btns.appendChild(closeBtn);
     dialog.appendChild(btns);
@@ -838,7 +845,7 @@ function showPresetManageDialog(): void {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }
 
-// 初始化自定义预设 ID 计数器
+// Initialize the custom-preset ID counter
 (function initCustomPresetId() {
   const customs = getCustomPresets();
   for (const p of customs) {
@@ -847,8 +854,8 @@ function showPresetManageDialog(): void {
   }
 })();
 
-// 最近工作目录
-const RECENT_CWD_KEY = 'duocli_recent_cwds';
+// Recent working directories
+const RECENT_CWD_KEY = 'posse_recent_cwds';
 const MAX_RECENT_CWDS = 8;
 
 function getRecentCwds(): string[] {
@@ -860,19 +867,19 @@ function addRecentCwd(cwd: string): void {
   list.unshift(cwd);
   if (list.length > MAX_RECENT_CWDS) list.length = MAX_RECENT_CWDS;
   localStorage.setItem(RECENT_CWD_KEY, JSON.stringify(list));
-  // 同步到主进程远程服务配置，供手机端新建会话时复用
-  window.duocli.remoteAddRecentCwd(cwd).catch(() => { /* ignore */ });
+  // Sync to the main-process remote service config so mobile clients can reuse it when creating sessions
+  window.posse.remoteAddRecentCwd(cwd).catch(() => { /* ignore */ });
 }
 
 function syncRecentCwdsToRemote(): void {
   const list = getRecentCwds();
-  // 按“旧 -> 新”顺序回放，保证远程端最终顺序与桌面端一致
+  // Replay in old -> new order so the remote ends up in the same order as the desktop
   list.slice().reverse().forEach((cwd) => {
-    window.duocli.remoteAddRecentCwd(cwd).catch(() => { /* ignore */ });
+    window.posse.remoteAddRecentCwd(cwd).catch(() => { /* ignore */ });
   });
 }
 
-// DOM 元素
+// DOM elements
 const cwdInput = document.getElementById('cwd-input') as HTMLInputElement;
 const cwdBrowseBtn = document.getElementById('cwd-browse-btn')!;
 const cwdOpenBtn = document.getElementById('cwd-open-btn')!;
@@ -894,7 +901,7 @@ const newSessionCreateBtn = document.getElementById('new-session-create')!;
 const fileTreeList = document.getElementById('file-tree-list')!;
 const fileTreeRefreshBtn = document.getElementById('file-tree-refresh-btn')!;
 
-// 文件预览面板
+// File preview panel
 const filePreviewPanel = document.getElementById('file-preview-panel')! as HTMLElement;
 const filePreviewName = document.getElementById('file-preview-name')!;
 const filePreviewMeta = document.getElementById('file-preview-meta')!;
@@ -912,16 +919,16 @@ function closeFilePreview(): void {
 async function openFilePreview(filePath: string, name: string): Promise<void> {
   let res: { ok: boolean; content?: string; size?: number; ext?: string; error?: string };
   try {
-    res = await window.duocli.readFile(filePath);
+    res = await window.posse.readFile(filePath);
   } catch (err) {
-    // IPC 失败 → 回退到外部编辑器打开
+    // IPC failed → fall back to opening in an external editor
     console.error('readFile failed', err);
-    window.duocli.openFile(filePath);
+    window.posse.openFile(filePath);
     return;
   }
   if (!res.ok) {
-    // 二进制 / 过大 / 读取失败 → 回退到外部编辑器打开
-    window.duocli.openFile(filePath);
+    // Binary / too large / read failure → fall back to opening in an external editor
+    window.posse.openFile(filePath);
     return;
   }
   filePreviewPath = filePath;
@@ -936,10 +943,10 @@ async function openFilePreview(filePath: string, name: string): Promise<void> {
 
 filePreviewCloseBtn.addEventListener('click', closeFilePreview);
 filePreviewExternalBtn.addEventListener('click', () => {
-  if (filePreviewPath) window.duocli.openFile(filePreviewPath);
+  if (filePreviewPath) window.posse.openFile(filePreviewPath);
 });
 
-// 分组方式切换（按 Agent / 按目录）
+// Group mode toggle (By Agent / By Folder)
 const groupByAgentBtn = document.getElementById('group-by-agent')!;
 const groupByFolderBtn = document.getElementById('group-by-folder')!;
 function syncGroupToggleUI(): void {
@@ -957,6 +964,7 @@ groupByAgentBtn.addEventListener('click', () => setSessionGroupMode('agent'));
 groupByFolderBtn.addEventListener('click', () => setSessionGroupMode('folder'));
 syncGroupToggleUI();
 const fileTreeOpenBtn = document.getElementById('file-tree-open-btn')!;
+const fileTreePickBtn = document.getElementById('file-tree-pick-btn')!;
 const fileTreePath = document.getElementById('file-tree-path')!;
 const fileTreePanel = document.getElementById('file-tree-panel')!;
 const fileTreeToggle = document.getElementById('file-tree-toggle')!;
@@ -971,7 +979,7 @@ const sidebar = document.getElementById('sidebar')!;;
 const sidebarToggle = document.getElementById('sidebar-toggle')!;
 const sidebarResizer = document.getElementById('sidebar-resizer')!;
 
-// 文件状态栏 DOM
+// File statusbar DOM
 const fileStatusbar = document.getElementById('file-statusbar')!;
 const fileStatusbarFiles = document.getElementById('file-statusbar-files')!;
 const appVersionEl = document.getElementById('app-version')!;
@@ -979,10 +987,10 @@ const appVersionEl = document.getElementById('app-version')!;
 const sidebarTabs = document.querySelectorAll('.sidebar-tab');
 const tabSessions = document.getElementById('tab-sessions')!;
 
-// AI 配置相关 DOM
+// AI config DOM
 const tabAiConfig = document.getElementById('tab-ai-config')!;
 
-// Devin 账号管理相关 DOM
+// Devin account management DOM
 const tabDevinAccounts = document.getElementById('tab-devin-accounts')!;
 const devinAccountsList = document.getElementById('devin-accounts-list')!;
 const devinCurrentLabel = document.getElementById('devin-current-label')!;
@@ -1003,7 +1011,7 @@ const aiModelInput = document.getElementById('ai-model-input') as HTMLInputEleme
 const aiKeyToggle = document.getElementById('ai-key-toggle')!;
 
 
-// 文件监听状态（全局）
+// File watcher state (global)
 let globalRecentFiles: string[] = [];
 const MAX_RECENT_FILES = 5;
 let currentEditorName: string | null = null;
@@ -1011,51 +1019,51 @@ let fileTreeRootCwd: string | null = null;
 const fileTreeExpandedDirs: Set<string> = new Set();
 const fileTreeChildrenCache: Map<string, FileTreeItem[]> = new Map();
 
-// 未读消息状态（绿点：AI 完成工作，等待输入）
+// Unread state (green dot: AI finished, waiting for input)
 const sessionUnread: Set<string> = new Set();
-// 工作中状态（黄点：AI 正在输出）
+// Busy state (yellow dot: AI is producing output)
 const sessionBusy: Set<string> = new Set();
-// 未读延迟计时器（静默超时检测）
+// Unread delay timer (idle-timeout detection)
 const unreadTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-// 最近收到的数据缓冲（用于提示符检测）
+// Recently received data buffer (used for prompt detection)
 const recentDataBuffer: Map<string, string> = new Map();
-// 手动改过标题的会话（不再自动更新）
+// Sessions with a manually edited title (no longer auto-updated)
 const sessionTitleLocked: Set<string> = new Set();
-// 置顶会话
+// Pinned sessions
 const pinnedSessions: Set<string> = new Set();
 
-// 同步会话状态到 main 进程（供手机端 remote-server 读取）
+// Sync session status to the main process (read by the mobile remote-server)
 function syncSessionStatusToMain(): void {
   const statuses: Record<string, string> = {};
   for (const id of sessionTitles.keys()) {
     if (sessionBusy.has(id)) {
-      statuses[id] = 'running';   // 黄灯：AI 正在工作
+      statuses[id] = 'running';   // Yellow: AI is working
     } else if (sessionUnread.has(id)) {
-      statuses[id] = 'idle';      // 绿灯：等待输入
+      statuses[id] = 'idle';      // Green: waiting for input
     } else {
-      statuses[id] = 'inactive';  // 灰灯：已查看
+      statuses[id] = 'inactive';  // Gray: already viewed
     }
   }
-  window.duocli.syncSessionStatus(statuses);
+  window.posse.syncSessionStatus(statuses);
 }
 
-// 终端管理器
+// Terminal manager
 const termManager = new TerminalManager(terminalContent, (id, cols, rows) => {
-  window.duocli.resizePty(id, cols, rows);
+  window.posse.resizePty(id, cols, rows);
 });
 
-// 恢复上次的工作目录和预设命令
+// Restore the last working directory and preset command
 if (savedCwd) {
   cwdInput.value = savedCwd;
 }
 syncRecentCwdsToRemote();
-// 初始化 preset select（含自定义预设），然后恢复上次选中
+// Initialize the preset select (including custom presets), then restore the last selection
 renderPresetSelect();
 if (lastPreset) {
   presetSelect.value = lastPreset;
 }
 
-// 自定义配色下拉组件
+// Custom color-scheme dropdown component
 const themeColorMap: Record<string, string> = {
   'auto': '',
   'vscode-dark': '#0078d4',
@@ -1095,29 +1103,30 @@ document.addEventListener('click', () => {
   themeSelect.classList.remove('open');
 });
 
-// 启动时恢复保存的配色
+// Restore the saved color scheme on launch
 setThemeValue(currentThemeId);
 
-// ========== CLI 标签颜色 ==========
+// ========== CLI tag colors ==========
 
-// 已知 CLI → 固定颜色（文字色, 背景色）
+// Known CLI → fixed colors (text color, background color)
+// NOTE: keys ending with " (auto)" are the displayName values produced by the backend (pty-manager). Keep them in sync.
 const CLI_TAG_COLORS: Record<string, [string, string]> = {
-  'Claude':       ['#d4a574', '#3d2e1e'],
-  'Claude全自动':  ['#e5a100', '#3d3010'],
-  'Codex':        ['#73c991', '#1e3328'],
-  'Codex全自动':   ['#56d4a0', '#1a3d2e'],
-  'Copilot':      ['#7ee787', '#17361f'],
-  'Copilot全自动': ['#3fb950', '#12351f'],
+  'Claude':        ['#d4a574', '#3d2e1e'],
+  'Claude (auto)':  ['#e5a100', '#3d3010'],
+  'Codex':         ['#73c991', '#1e3328'],
+  'Codex (auto)':   ['#56d4a0', '#1a3d2e'],
+  'Copilot':       ['#7ee787', '#17361f'],
+  'Copilot (auto)': ['#3fb950', '#12351f'],
 };
 
 function getCliTagColors(displayName: string): [string, string] {
-  // 精确匹配
+  // Exact match
   if (CLI_TAG_COLORS[displayName]) return CLI_TAG_COLORS[displayName];
-  // 前缀匹配（自定义预设的"全自动"变体）
+  // Prefix match (custom-preset "auto" variants)
   for (const key of Object.keys(CLI_TAG_COLORS)) {
     if (displayName.startsWith(key)) return CLI_TAG_COLORS[key];
   }
-  // 未知 CLI：用 hash 从色板中选一个
+  // Unknown CLI: pick one from the palette via hash
   let h = 0;
   for (let i = 0; i < displayName.length; i++) {
     h = ((h << 5) - h + displayName.charCodeAt(i)) | 0;
@@ -1129,9 +1138,9 @@ function getCliTagColors(displayName: string): [string, string] {
   return palette[Math.abs(h) % palette.length];
 }
 
-// ========== 路径自动颜色 ==========
+// ========== Automatic path colors ==========
 
-// 高区分度色板（12 色，HSL 均匀分布，饱和度高）
+// High-contrast palette (12 colors, evenly distributed in HSL, high saturation)
 const PATH_COLORS = [
   '#e06c75', '#e5c07b', '#98c379', '#56b6c2',
   '#61afef', '#c678dd', '#f78c6c', '#d19a66',
@@ -1148,7 +1157,7 @@ function cwdToColor(cwd: string): string {
   return PATH_COLORS[Math.abs(hash) % PATH_COLORS.length];
 }
 
-// 归一化目录路径，避免同一目录因末尾斜杠 / macOS /private 前缀差异被拆成多组
+// Normalize a directory path so the same directory isn't split into multiple groups due to a trailing slash or the macOS /private prefix
 function normalizeCwd(cwd: string): string {
   if (!cwd) return '';
   let p = cwd.trim();
@@ -1157,14 +1166,14 @@ function normalizeCwd(cwd: string): string {
   return p;
 }
 
-// 取路径最后一段作为项目名
+// Use the last path segment as the project name
 function cwdShortName(cwd: string): string {
-  if (!cwd) return '未知项目';
+  if (!cwd) return 'Unknown Project';
   const parts = cwd.replace(/\/+$/, '').split('/');
   return parts[parts.length - 1] || cwd;
 }
 
-// 自动配色：根据 cwd 映射到一个实际主题，尽量让不同项目分配到不同主题
+// Auto color scheme: map a cwd to an actual theme, trying to give different projects different themes
 const AUTO_THEME_LIST = ['vscode-dark', 'monokai', 'dracula', 'solarized-dark', 'one-dark', 'nord'];
 const autoThemeCache: Map<string, string> = new Map(); // cwd → themeId
 
@@ -1181,9 +1190,9 @@ function cwdToThemeId(cwd: string): string {
   const cached = autoThemeCache.get(cwd);
   if (cached) return cached;
 
-  // 已被占用的主题
+  // Themes already taken
   const usedThemes = new Set(autoThemeCache.values());
-  // 优先选未被占用的主题
+  // Prefer an unused theme
   const available = AUTO_THEME_LIST.filter(t => !usedThemes.has(t));
   const hash = cwdHash(cwd);
   let theme: string;
@@ -1196,20 +1205,20 @@ function cwdToThemeId(cwd: string): string {
   return theme;
 }
 
-// 解析实际 themeId：auto 时根据 cwd 决定
+// Resolve the actual themeId: when auto, decide based on cwd
 function resolveThemeId(themeId: string, cwd: string): string {
   return themeId === 'auto' ? cwdToThemeId(cwd) : themeId;
 }
 
-// ========== 工具函数 ==========
+// ========== Utility functions ==========
 
 function friendlyTime(ts: number): string {
   const now = Date.now();
   const diff = Math.floor((now - ts) / 1000);
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}天前`;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
   const d = new Date(ts);
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
@@ -1222,21 +1231,22 @@ function updateSessionTitleBar(): void {
   const activeId = termManager.getActiveId();
   if (activeId) {
     const cwd = sessionCwds.get(activeId) || '';
-    // 左侧目录树顶部：显示最右侧目录名
+    // Top of the left file tree: show the last directory name
     const cwdDisplay = cwd ? cwd.split('/').filter(Boolean).pop() : '';
-    fileTreePath.textContent = cwdDisplay || '目录';
+    fileTreePath.textContent = cwdDisplay || 'Directory';
     fileTreePath.title = cwd || '';
-    // macOS 系统窗口标题：保留完整信息
+    // macOS window title: keep full information
     const title = sessionTitles.get(activeId) || '';
     const displayName = sessionDisplayNames.get(activeId) || '';
-    const parts = ['DuoCLI'];
+    const parts = ['Posse'];
     if (displayName) parts.push(displayName);
-    if (title && title !== '新会话' && title !== '新对话') parts.push(title);
-    window.duocli.setWindowTitle(parts.join('-'));
+    // 'New session' / 'New conversation' are default titles produced by the backend (kept for the comparison to work)
+    if (title && title !== 'New session' && title !== 'New conversation') parts.push(title);
+    window.posse.setWindowTitle(parts.join('-'));
   } else {
-    fileTreePath.textContent = '目录';
+    fileTreePath.textContent = 'Directory';
     fileTreePath.title = '';
-    window.duocli.setWindowTitle('DuoCLI');
+    window.posse.setWindowTitle('Posse');
   }
 }
 
@@ -1251,7 +1261,7 @@ function getActiveSessionCwd(): string {
 }
 
 function quotePathForShell(filePath: string): string {
-  // Windows/cmd 用双引号；类 Unix shell 用单引号
+  // Windows/cmd uses double quotes; Unix-like shells use single quotes
   if (/^[a-zA-Z]:\\/.test(filePath)) return `"${filePath.replace(/"/g, '\\"')}"`;
   return `'${filePath.replace(/'/g, `'\"'\"'`)}'`;
 }
@@ -1263,7 +1273,7 @@ function insertPathToActiveTerminal(filePath: string): void {
 }
 
 function showTreeContextMenu(e: MouseEvent, itemPath: string, isDir: boolean): void {
-  // 移除已有菜单
+  // Remove any existing menu
   document.querySelectorAll('.term-context-menu').forEach(m => m.remove());
 
   const menu = document.createElement('div');
@@ -1273,16 +1283,16 @@ function showTreeContextMenu(e: MouseEvent, itemPath: string, isDir: boolean): v
 
   if (isDir) {
     items.push(
-      { label: '复制绝对路径', action: () => { navigator.clipboard.writeText(itemPath); } },
-      { label: '在 Finder 中打开', action: () => window.duocli.openFolder(itemPath) },
-      { label: '插入路径到终端', action: () => insertPathToActiveTerminal(itemPath) },
+      { label: 'Copy absolute path', action: () => { navigator.clipboard.writeText(itemPath); } },
+      { label: 'Reveal in Finder', action: () => window.posse.openFolder(itemPath) },
+      { label: 'Insert path into terminal', action: () => insertPathToActiveTerminal(itemPath) },
     );
   } else {
     items.push(
-      { label: '复制绝对路径', action: () => { navigator.clipboard.writeText(itemPath); } },
-      { label: '用默认应用打开', action: () => window.duocli.openFile(itemPath) },
-      { label: '用编辑器打开', action: () => window.duocli.filewatcherOpen(itemPath) },
-      { label: '插入路径到终端', action: () => insertPathToActiveTerminal(itemPath) },
+      { label: 'Copy absolute path', action: () => { navigator.clipboard.writeText(itemPath); } },
+      { label: 'Open with default app', action: () => window.posse.openFile(itemPath) },
+      { label: 'Open in editor', action: () => window.posse.filewatcherOpen(itemPath) },
+      { label: 'Insert path into terminal', action: () => insertPathToActiveTerminal(itemPath) },
     );
   }
 
@@ -1306,7 +1316,7 @@ function showTreeContextMenu(e: MouseEvent, itemPath: string, isDir: boolean): v
 
 async function loadDirItems(dirPath: string): Promise<FileTreeItem[]> {
   if (fileTreeChildrenCache.has(dirPath)) return fileTreeChildrenCache.get(dirPath)!;
-  const items = await window.duocli.fileTreeListDir(dirPath);
+  const items = await window.posse.fileTreeListDir(dirPath);
   fileTreeChildrenCache.set(dirPath, items);
   return items;
 }
@@ -1314,7 +1324,7 @@ async function loadDirItems(dirPath: string): Promise<FileTreeItem[]> {
 async function renderFileTree(): Promise<void> {
   const rootCwd = getActiveSessionCwd();
   if (!rootCwd) {
-    fileTreeList.innerHTML = '<div class="file-tree-empty">选择会话后显示当前目录</div>';
+    fileTreeList.innerHTML = '<div class="file-tree-empty">Select a session to show the current directory</div>';
     return;
   }
 
@@ -1323,11 +1333,12 @@ async function renderFileTree(): Promise<void> {
     fileTreeChildrenCache.clear();
     fileTreeExpandedDirs.clear();
     fileTreeExpandedDirs.add(rootCwd);
+    void loadClaudeHistory(rootCwd);
   }
 
   fileTreeList.innerHTML = '';
 
-  // 先渲染根目录行
+  // Render the root directory row first
   const rootRow = document.createElement('div');
   rootRow.className = 'file-tree-row dir active-dir';
   rootRow.style.paddingLeft = '6px';
@@ -1346,10 +1357,10 @@ async function renderFileTree(): Promise<void> {
   const rootOpenBtn = document.createElement('span');
   rootOpenBtn.className = 'file-tree-open-folder';
   rootOpenBtn.textContent = '\u{1F4C2}';
-  rootOpenBtn.title = '在 Finder 中打开';
+  rootOpenBtn.title = 'Reveal in Finder';
   rootOpenBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.duocli.openFolder(rootCwd);
+    window.posse.openFolder(rootCwd);
   });
   rootRow.appendChild(rootOpenBtn);
 
@@ -1381,15 +1392,15 @@ async function renderFileTree(): Promise<void> {
       name.title = item.path;
       row.appendChild(name);
 
-      // 目录行：添加"在 Finder 中打开"图标按钮
+      // Directory row: add a "Reveal in Finder" icon button
       if (item.isDir) {
         const openFolderBtn = document.createElement('span');
         openFolderBtn.className = 'file-tree-open-folder';
         openFolderBtn.textContent = '\u{1F4C2}';
-        openFolderBtn.title = '在 Finder 中打开';
+        openFolderBtn.title = 'Reveal in Finder';
         openFolderBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          window.duocli.openFolder(item.path);
+          window.posse.openFolder(item.path);
         });
         row.appendChild(openFolderBtn);
       }
@@ -1400,7 +1411,7 @@ async function renderFileTree(): Promise<void> {
           if (wasExpanded) fileTreeExpandedDirs.delete(item.path);
           else fileTreeExpandedDirs.add(item.path);
           await renderFileTree();
-          // 展开后滚动到该目录位置
+          // After expanding, scroll to this directory
           if (!wasExpanded) {
             requestAnimationFrame(() => {
               row.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1411,7 +1422,7 @@ async function renderFileTree(): Promise<void> {
         }
       });
 
-      // 右键菜单：文件和目录都支持
+      // Context menu: supported for both files and directories
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -1429,7 +1440,7 @@ async function renderFileTree(): Promise<void> {
 
   await appendRows(rootItems, 0);
   if (!fileTreeList.children.length) {
-    fileTreeList.innerHTML = '<div class="file-tree-empty">目录为空</div>';
+    fileTreeList.innerHTML = '<div class="file-tree-empty">Directory is empty</div>';
   }
 }
 
@@ -1440,19 +1451,19 @@ async function refreshFileTree(force = false): Promise<void> {
   await renderFileTree();
 }
 
-// 确认弹窗
-function showConfirmDialog(title: string, kind = '终端'): Promise<'close' | 'cancel'> {
+// Confirmation dialog
+function showConfirmDialog(title: string, kind = 'Terminal'): Promise<'close' | 'cancel'> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
     const dialog = document.createElement('div');
     dialog.className = 'confirm-dialog';
     dialog.innerHTML = `
-      <h3>关闭${kind}</h3>
-      <p>确定要关闭「${title}」吗？</p>
+      <h3>Close ${kind}</h3>
+      <p>Are you sure you want to close "${title}"?</p>
       <div class="confirm-buttons">
-        <button class="btn-cancel">取消</button>
-        <button class="btn-close-confirm" autofocus>关闭</button>
+        <button class="btn-cancel">Cancel</button>
+        <button class="btn-close-confirm" autofocus>Close</button>
       </div>`;
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
@@ -1461,7 +1472,7 @@ function showConfirmDialog(title: string, kind = '终端'): Promise<'close' | 'c
     const closeBtn = dialog.querySelector<HTMLButtonElement>('.btn-close-confirm')!;
     closeBtn.addEventListener('click', () => cleanup('close'));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup('cancel'); });
-    // 键盘操作：Enter 关闭，Escape 取消
+    // Keyboard: Enter closes, Escape cancels
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') { e.preventDefault(); cleanup('close'); }
       else if (e.key === 'Escape') { e.preventDefault(); cleanup('cancel'); }
@@ -1471,10 +1482,10 @@ function showConfirmDialog(title: string, kind = '终端'): Promise<'close' | 'c
   });
 }
 
-// ========== 渲染 ==========
+// ========== Rendering ==========
 
 function startTitleEdit(id: string, titleSpan: HTMLElement): void {
-  // 如果正在编辑其他会话，先取消
+  // If another session's title is being edited, cancel it first
   if (editingTitleId && editingTitleId !== id) {
     renderSessionList();
   }
@@ -1497,7 +1508,7 @@ function startTitleEdit(id: string, titleSpan: HTMLElement): void {
     if (val && val !== current) {
       sessionTitles.set(id, val);
       sessionTitleLocked.add(id);
-      window.duocli.renamePty(id, val);
+      window.posse.renamePty(id, val);
     }
     renderSessionList();
   };
@@ -1518,19 +1529,19 @@ function showSessionContextMenu(e: MouseEvent, targetId: string): void {
 
   const items: Array<{ label: string; action: () => void }> = [
     {
-      label: '重新生成标题',
+      label: 'Regenerate title',
       action: () => {
-        void window.duocli.regenerateTitle(targetId);
+        void window.posse.regenerateTitle(targetId);
       },
     },
     {
-      label: '关闭其他对话',
+      label: 'Close other sessions',
       action: () => {
         destroySessions(Array.from(sessionTitles.keys()).filter(id => id !== targetId));
       },
     },
     {
-      label: '关闭本项目下其他对话',
+      label: 'Close other sessions in this project',
       action: () => {
         destroySessions(Array.from(sessionTitles.keys()).filter(id =>
           id !== targetId && normalizeCwd(sessionCwds.get(id) || '') === targetCwdKey
@@ -1538,7 +1549,7 @@ function showSessionContextMenu(e: MouseEvent, targetId: string): void {
       },
     },
     {
-      label: '关闭所有对话',
+      label: 'Close all sessions',
       action: () => {
         destroySessions(Array.from(sessionTitles.keys()));
       },
@@ -1566,22 +1577,111 @@ function showSessionContextMenu(e: MouseEvent, targetId: string): void {
 function renderSessionList(): void {
   const activeId = termManager.getActiveId();
 
-  // 同步会话状态到 main 进程（供手机端读取）
+  // Sync session status to the main process (read by the mobile client)
   syncSessionStatusToMain();
 
-  // 如果有正在编辑的标题，检查 input 是否还在 DOM 中
+  // If a title is being edited, check whether the input is still in the DOM
   if (editingTitleId) {
     const existingInput = sessionList.querySelector(`input[data-session-id="${editingTitleId}"]`) as HTMLInputElement | null;
     if (existingInput && document.activeElement === existingInput) {
-      // 正在编辑中，跳过渲染以保留编辑状态
+      // Currently editing; skip rendering to preserve the edit state
       return;
     }
-    // input 不在 DOM 中或已失去焦点，清除编辑状态
+    // The input is no longer in the DOM or has lost focus; clear the edit state
     editingTitleId = null;
   }
   sessionList.innerHTML = '';
 
-  // pinned 优先，其余按创建时间降序（新创建的排最上面）
+  // ========== Claude Code native history (currently opened directory) ==========
+  if (claudeHistorySessions.length > 0) {
+    const header = document.createElement('div');
+    header.className = 'session-group-header closed-sessions-header';
+    header.style.borderLeftColor = '#d97757';
+
+    const name = document.createElement('span');
+    name.className = 'session-group-name';
+    name.textContent = `📁 ${cwdShortName(claudeHistoryCwd)} · History (${claudeHistorySessions.length})`;
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'session-group-add-btn';
+    toggleBtn.textContent = claudeHistoryCollapsed ? '▸' : '▾';
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      claudeHistoryCollapsed = !claudeHistoryCollapsed;
+      renderSessionList();
+    });
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'session-group-add-btn';
+    refreshBtn.textContent = '↻';
+    refreshBtn.title = 'Refresh history';
+    refreshBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void loadClaudeHistory(claudeHistoryCwd);
+    });
+
+    header.appendChild(name);
+    header.appendChild(toggleBtn);
+    header.appendChild(refreshBtn);
+    sessionList.appendChild(header);
+
+    if (!claudeHistoryCollapsed) {
+      for (const s of claudeHistorySessions) {
+        const item = document.createElement('div');
+        item.className = 'session-item session-item-closed';
+        item.style.setProperty('--group-color', '#d9775712');
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'session-title';
+        titleSpan.textContent = s.title || s.id;
+        titleSpan.style.opacity = s.title ? '1' : '0.5';
+
+        const metaRow = document.createElement('div');
+        metaRow.className = 'session-meta-row';
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'session-time';
+        timeSpan.textContent = friendlyTime(s.mtimeMs);
+        metaRow.appendChild(timeSpan);
+        const agentLabel = s.agent === 'codex' ? 'Codex' : 'Claude';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'session-display-name';
+        nameSpan.textContent = agentLabel;
+        const [tagColor, tagBg] = getCliTagColors(agentLabel);
+        nameSpan.style.setProperty('--cli-tag-color', tagColor);
+        nameSpan.style.setProperty('--cli-tag-bg', tagBg);
+        metaRow.appendChild(nameSpan);
+
+        const resumeBtn = document.createElement('button');
+        resumeBtn.className = 'session-edit-btn';
+        resumeBtn.textContent = '↩';
+        resumeBtn.title = `Resume ${agentLabel} session`;
+        resumeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          void resumeAgentSession(s);
+        });
+
+        const titleRow = document.createElement('div');
+        titleRow.className = 'session-title-row';
+        titleRow.appendChild(titleSpan);
+        titleRow.appendChild(resumeBtn);
+
+        const topRow = document.createElement('div');
+        topRow.className = 'session-item-top';
+        const dot = document.createElement('span');
+        dot.className = 'session-color-dot';
+        dot.style.backgroundColor = tagColor;
+        topRow.appendChild(dot);
+        topRow.appendChild(titleRow);
+
+        item.appendChild(topRow);
+        item.appendChild(metaRow);
+        item.addEventListener('click', () => { void resumeAgentSession(s); });
+        sessionList.appendChild(item);
+      }
+    }
+  }
+
+  // Pinned first, the rest sorted by creation time descending (newest on top)
   const allIds = Array.from(sessionTitles.keys());
   const byCreated = (a: string, b: string) =>
     getSessionCreateTime(b) - getSessionCreateTime(a);
@@ -1590,24 +1690,24 @@ function renderSessionList(): void {
     ...allIds.filter(id => !pinnedSessions.has(id)).sort(byCreated),
   ];
 
-  // 按当前分组模式（agent / folder）分组
-  // folder 模式下同一目录可能因末尾斜杠 / macOS /private 前缀差异被拆成多组，sessionGroupKey 已归一化
+  // Group by the current grouping mode (agent / folder)
+  // In folder mode the same directory could be split into multiple groups due to a trailing slash or the macOS /private prefix; sessionGroupKey already normalizes it
   const groups: Map<string, string[]> = new Map();
-  const groupDisplayCwd: Map<string, string> = new Map(); // 该组代表性 cwd（用于新建按钮 / folder 显示）
-  const groupFirstCreatedAt: Map<string, number> = new Map(); // 组排序键：该组最早会话的创建时间
+  const groupDisplayCwd: Map<string, string> = new Map(); // Representative cwd for the group (used by the new button / folder display)
+  const groupFirstCreatedAt: Map<string, number> = new Map(); // Group sort key: creation time of the group's earliest session
   for (const id of sortedIds) {
     const rawCwd = sessionCwds.get(id) || '';
     const key = sessionGroupKey(id);
     if (!groups.has(key)) {
       groups.set(key, []);
       groupDisplayCwd.set(key, rawCwd);
-      // 记录该组第一个出现的会话创建时间（sortedIds 已按时间排好，第一个就是最早的）
+      // Record the creation time of the first session in this group (sortedIds is already sorted by time, so the first is the earliest)
       groupFirstCreatedAt.set(key, getSessionCreateTime(id));
     }
     groups.get(key)!.push(id);
   }
 
-  // 组间排序：置顶组优先，其余按首个会话创建时间升序（先创建的组在上面）
+  // Sort groups: pinned groups first, the rest by their first session's creation time ascending (earlier groups on top)
   const pinnedGroupKeys = new Set<string>();
   for (const id of pinnedSessions) {
     pinnedGroupKeys.add(sessionGroupKey(id));
@@ -1625,7 +1725,7 @@ function renderSessionList(): void {
     const isAgentMode = sessionGroupMode === 'agent';
     const color = isAgentMode ? getCliTagColors(groupKey)[0] : cwdToColor(cwd);
 
-    // 分组头
+    // Group header
     const groupHeader = document.createElement('div');
     groupHeader.className = 'session-group-header';
     groupHeader.style.borderLeftColor = color;
@@ -1633,11 +1733,11 @@ function renderSessionList(): void {
     groupName.className = 'session-group-name';
     groupName.textContent = isAgentMode ? groupKey : cwdShortName(cwd);
     groupName.title = isAgentMode ? groupKey : cwd;
-    // 添加按钮：agent 模式开默认新建框，folder 模式在该目录下新建
+    // Add button: agent mode opens the default new-terminal dialog, folder mode creates one in this directory
     const groupAddBtn = document.createElement('button');
     groupAddBtn.className = 'session-group-add-btn';
     groupAddBtn.textContent = '+';
-    groupAddBtn.title = isAgentMode ? '新建终端' : '在此目录下创建新终端';
+    groupAddBtn.title = isAgentMode ? 'New terminal' : 'Create a new terminal in this directory';
     groupAddBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       openNewSessionDialog(isAgentMode ? undefined : cwd);
@@ -1650,7 +1750,7 @@ function renderSessionList(): void {
     groupHeader.appendChild(groupCount);
     sessionList.appendChild(groupHeader);
 
-    // 该组下的会话
+    // Sessions in this group
     for (const id of ids) {
       const title = sessionTitles.get(id)!;
       const isPinned = pinnedSessions.has(id);
@@ -1672,7 +1772,7 @@ function renderSessionList(): void {
       const pinBtn = document.createElement('button');
       pinBtn.className = 'session-pin' + (isPinned ? ' pinned' : '');
       pinBtn.textContent = '\u{1F4CC}';
-      pinBtn.title = isPinned ? '取消置顶' : '置顶';
+      pinBtn.title = isPinned ? 'Unpin' : 'Pin';
       pinBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (pinnedSessions.has(id)) pinnedSessions.delete(id);
@@ -1684,11 +1784,11 @@ function renderSessionList(): void {
       titleSpan.className = 'session-title';
       titleSpan.textContent = title;
 
-      // 铅笔图标按钮，点击修改名称
+      // Pencil icon button; click to rename
       const editBtn = document.createElement('button');
       editBtn.className = 'session-edit-btn';
       editBtn.textContent = '✏️';
-      editBtn.title = '修改名称';
+      editBtn.title = 'Rename';
       editBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         startTitleEdit(id, titleSpan);
@@ -1711,17 +1811,17 @@ function renderSessionList(): void {
         metaRow.appendChild(nameSpan);
       }
 
-      // 显示实际使用的模型提供商（如 MiniMax、GLM、Anthropic 等）
+      // Show the actual model provider in use (e.g. MiniMax, GLM, Anthropic)
       const provider = sessionProviders.get(id);
       if (provider) {
         const providerSpan = document.createElement('span');
         providerSpan.className = 'session-provider-tag';
         providerSpan.textContent = provider;
-        providerSpan.title = '实际使用的模型提供商';
+        providerSpan.title = 'Actual model provider in use';
         metaRow.appendChild(providerSpan);
       }
 
-      // 第一行：dot + 置顶 + 标题 + 编辑 + 关闭按钮
+      // First row: dot + pin + title + edit + close button
       const topRow = document.createElement('div');
       topRow.className = 'session-item-top';
 
@@ -1739,27 +1839,27 @@ function renderSessionList(): void {
       topRow.appendChild(titleRow);
       topRow.appendChild(closeBtn);
 
-      // 第二行：时间/标签 + 催工按钮（点击弹配置弹窗）
+      // Second row: time/tags + loop button (click opens the config dialog)
       const autoContinueConfig = sessionAutoContinue.get(id);
       const autoContinueEnabled = autoContinueConfig?.enabled ?? false;
 
       const autoContinueLabel = document.createElement('span');
       autoContinueLabel.className = 'session-auto-continue-label' + (autoContinueEnabled ? ' enabled' : '');
-      autoContinueLabel.textContent = '催';
-      autoContinueLabel.title = autoContinueEnabled ? '循环已开启，点击配置' : '点击配置循环';
+      autoContinueLabel.textContent = 'Loop';
+      autoContinueLabel.title = autoContinueEnabled ? 'Loop is on; click to configure' : 'Click to configure the loop';
       autoContinueLabel.addEventListener('click', (e) => {
         e.stopPropagation();
         showAutoContinueConfigDialog(id);
       });
 
-      // 自动切号状态标签（显示在"催"胶囊右侧）
+      // Auto account-switch status label (shown to the right of the "Loop" pill)
       const switchStatus = sessionAutoSwitchStatus.get(id);
       let switchStatusLabel: HTMLSpanElement | null = null;
       if (switchStatus) {
         switchStatusLabel = document.createElement('span');
         switchStatusLabel.className = 'session-switch-status ' + switchStatus.status;
-        switchStatusLabel.textContent = switchStatus.detail || (switchStatus.status === 'switching' ? '换号中...' : switchStatus.status === 'switched' ? '已切换' : switchStatus.status === 'exhausted' ? '账号耗尽' : '切号失败');
-        switchStatusLabel.title = `自动切号: ${switchStatus.status}`;
+        switchStatusLabel.textContent = switchStatus.detail || (switchStatus.status === 'switching' ? 'Switching...' : switchStatus.status === 'switched' ? 'Switched' : switchStatus.status === 'exhausted' ? 'Accounts exhausted' : 'Switch failed');
+        switchStatusLabel.title = `Auto account-switch: ${switchStatus.status}`;
       }
 
       const bottomRow = document.createElement('div');
@@ -1768,14 +1868,14 @@ function renderSessionList(): void {
       bottomRow.appendChild(autoContinueLabel);
       if (switchStatusLabel) bottomRow.appendChild(switchStatusLabel);
 
-      // 右键菜单
+      // Context menu
       item.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
         showSessionContextMenu(e, id);
       });
 
-      // 组装
+      // Assemble
       item.addEventListener('click', () => switchSession(id));
       item.appendChild(topRow);
       item.appendChild(bottomRow);
@@ -1783,14 +1883,14 @@ function renderSessionList(): void {
     }
   }
 
-  // Chat 会话区域
+  // Chat sessions area
   if (chatSessionTitles.size > 0) {
     const chatHeader = document.createElement('div');
     chatHeader.className = 'session-group-header';
     chatHeader.style.borderLeftColor = '#a78bfa';
     const chatName = document.createElement('span');
     chatName.className = 'session-group-name';
-    chatName.textContent = '💬 Chat 对话';
+    chatName.textContent = '💬 Chat';
     chatHeader.appendChild(chatName);
     sessionList.appendChild(chatHeader);
 
@@ -1807,13 +1907,13 @@ function renderSessionList(): void {
       item.style.setProperty('--group-color', '#a78bfa12');
       const titleSpan = document.createElement('span');
       titleSpan.className = 'session-title chat-session-title';
-      titleSpan.textContent = title || '新对话';
+      titleSpan.textContent = title || 'New Chat';
       titleSpan.style.opacity = title ? '1' : '0.5';
 
       const delBtn = document.createElement('button');
       delBtn.className = 'session-close-btn';
       delBtn.textContent = '✕';
-      delBtn.title = '删除对话';
+      delBtn.title = 'Delete chat';
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         void handleChatCloseClick(id);
@@ -1841,7 +1941,7 @@ function renderSessionList(): void {
     }
   }
 
-  // ========== 已关闭会话（可恢复） ==========
+  // ========== Closed sessions (resumable) ==========
   if (closedSessions.length > 0) {
     const header = document.createElement('div');
     header.className = 'session-group-header closed-sessions-header';
@@ -1849,7 +1949,7 @@ function renderSessionList(): void {
 
     const name = document.createElement('span');
     name.className = 'session-group-name';
-    name.textContent = `🔄 已关闭 (${closedSessions.length})`;
+    name.textContent = `🔄 Closed (${closedSessions.length})`;
 
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'session-group-add-btn';
@@ -1863,11 +1963,11 @@ function renderSessionList(): void {
     const clearBtn = document.createElement('button');
     clearBtn.className = 'session-group-add-btn';
     clearBtn.textContent = '✕';
-    clearBtn.title = '清空全部';
+    clearBtn.title = 'Clear all';
     clearBtn.style.color = '#f87171';
     clearBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      closedSessions = await window.duocli.closedSessionsClear();
+      closedSessions = await window.posse.closedSessionsClear();
       renderSessionList();
     });
 
@@ -1877,7 +1977,7 @@ function renderSessionList(): void {
     sessionList.appendChild(header);
 
     if (!closedSessionsCollapsed) {
-      // 按关闭时间降序（最近关闭排最前）
+      // Sort by closed time descending (most recently closed first)
       const sorted = [...closedSessions].sort((a, b) => b.closedAt - a.closedAt);
       for (const cs of sorted) {
         const item = document.createElement('div');
@@ -1886,7 +1986,7 @@ function renderSessionList(): void {
 
         const titleSpan = document.createElement('span');
         titleSpan.className = 'session-title';
-        titleSpan.textContent = cs.title || '新对话';
+        titleSpan.textContent = cs.title || 'New Chat';
         titleSpan.style.opacity = cs.title ? '1' : '0.5';
 
         const metaRow = document.createElement('div');
@@ -1908,7 +2008,7 @@ function renderSessionList(): void {
         const restoreBtn = document.createElement('button');
         restoreBtn.className = 'session-edit-btn';
         restoreBtn.textContent = '↩';
-        restoreBtn.title = '恢复会话';
+        restoreBtn.title = 'Resume session';
         restoreBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           restoreClosedSession(cs);
@@ -1917,22 +2017,22 @@ function renderSessionList(): void {
         const renameBtn = document.createElement('button');
         renameBtn.className = 'session-edit-btn';
         renameBtn.textContent = '✏️';
-        renameBtn.title = '重命名';
+        renameBtn.title = 'Rename';
         renameBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const next = window.prompt('重命名会话', cs.title || '');
+          const next = window.prompt('Rename session', cs.title || '');
           if (next === null) return;
-          closedSessions = await window.duocli.closedSessionsRename(cs.id, next.trim());
+          closedSessions = await window.posse.closedSessionsRename(cs.id, next.trim());
           renderSessionList();
         });
 
         const delBtn = document.createElement('button');
         delBtn.className = 'session-close';
         delBtn.textContent = '×';
-        delBtn.title = '删除记录';
+        delBtn.title = 'Delete record';
         delBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          closedSessions = await window.duocli.closedSessionsRemove(cs.id);
+          closedSessions = await window.posse.closedSessionsRemove(cs.id);
           renderSessionList();
         });
 
@@ -1958,7 +2058,7 @@ function renderSessionList(): void {
     }
   }
 
-  // ========== 已关闭 Chat 会话（可恢复） ==========
+  // ========== Closed chat sessions (resumable) ==========
   if (closedChatSessions.length > 0) {
     const header = document.createElement('div');
     header.className = 'session-group-header closed-sessions-header';
@@ -1966,16 +2066,16 @@ function renderSessionList(): void {
 
     const name = document.createElement('span');
     name.className = 'session-group-name';
-    name.textContent = `💬 已关闭对话 (${closedChatSessions.length})`;
+    name.textContent = `💬 Closed Chats (${closedChatSessions.length})`;
 
     const clearBtn = document.createElement('button');
     clearBtn.className = 'session-group-add-btn';
     clearBtn.textContent = '✕';
-    clearBtn.title = '清空全部';
+    clearBtn.title = 'Clear all';
     clearBtn.style.color = '#f87171';
     clearBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      closedChatSessions = await window.duocli.closedChatClear();
+      closedChatSessions = await window.posse.closedChatClear();
       renderSessionList();
     });
 
@@ -1991,7 +2091,7 @@ function renderSessionList(): void {
 
       const titleSpan = document.createElement('span');
       titleSpan.className = 'session-title chat-session-title';
-      titleSpan.textContent = cs.title || '新对话';
+      titleSpan.textContent = cs.title || 'New Chat';
       titleSpan.style.opacity = cs.title ? '1' : '0.5';
 
       const metaRow = document.createElement('div');
@@ -2004,7 +2104,7 @@ function renderSessionList(): void {
       const restoreBtn = document.createElement('button');
       restoreBtn.className = 'session-edit-btn';
       restoreBtn.textContent = '↩';
-      restoreBtn.title = '恢复对话';
+      restoreBtn.title = 'Resume chat';
       restoreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         restoreClosedChatSession(cs);
@@ -2013,10 +2113,10 @@ function renderSessionList(): void {
       const delBtn = document.createElement('button');
       delBtn.className = 'session-close';
       delBtn.textContent = '×';
-      delBtn.title = '删除记录';
+      delBtn.title = 'Delete record';
       delBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        closedChatSessions = await window.duocli.closedChatRemove(cs.id);
+        closedChatSessions = await window.posse.closedChatRemove(cs.id);
         renderSessionList();
       });
 
@@ -2034,7 +2134,7 @@ function renderSessionList(): void {
       topRow.appendChild(titleRow);
       topRow.appendChild(delBtn);
 
-      // 点击整个 item 也可恢复
+      // Clicking the whole item also resumes
       item.addEventListener('click', () => {
         restoreClosedChatSession(cs);
       });
@@ -2046,7 +2146,7 @@ function renderSessionList(): void {
   }
 }
 
-// ========== 核心操作 ==========
+// ========== Core operations ==========
 
 function attachPtySession(info: PtySessionInfo, createdAt: number, replayRawBuffer = false): void {
   sessionTitles.set(info.id, info.title);
@@ -2062,9 +2162,9 @@ function attachPtySession(info: PtySessionInfo, createdAt: number, replayRawBuff
   }
 }
 
-// 恢复已关闭的会话
+// Resume a closed session
 async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
-  // 优先用终端输出的完整恢复命令，兜底自己拼
+  // Prefer the full resume command captured from terminal output, fall back to building one
   const resumeCmd = cs.resumeCommand
     || (cs.presetCommand
       ? `${cs.presetCommand} --resume ${cs.resumeId}`
@@ -2072,12 +2172,12 @@ async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
   const cwd = cs.cwd || sessionCwds.get(termManager.getActiveId() || '') || '';
   const themeId = resolveThemeId(currentThemeId, cwd);
 
-  const result = await window.duocli.createPty(cwd, resumeCmd, themeId);
+  const result = await window.posse.createPty(cwd, resumeCmd, themeId);
   const now = Date.now();
   attachPtySession({ ...result, title: cs.title, displayName: cs.displayName || result.displayName }, now);
 
-  // 从已关闭列表中移除
-  closedSessions = await window.duocli.closedSessionsRemove(cs.id);
+  // Remove from the closed list
+  closedSessions = await window.posse.closedSessionsRemove(cs.id);
 
   updateEmptyState();
   renderSessionList();
@@ -2085,25 +2185,61 @@ async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
   void renderFileTree();
   setTimeout(() => {
     const dims = termManager.getActiveDimensions();
-    if (dims) window.duocli.resizePty(result.id, dims.cols, dims.rows);
+    if (dims) window.posse.resizePty(result.id, dims.cols, dims.rows);
   }, 100);
 }
 
-// 恢复已关闭的 Chat 会话
+// Load the native Claude Code session history for the currently opened directory
+async function loadClaudeHistory(cwd: string): Promise<void> {
+  if (!cwd) {
+    claudeHistorySessions = [];
+    claudeHistoryCwd = '';
+    renderSessionList();
+    return;
+  }
+  try {
+    const list = await window.posse.claudeSessionsList(cwd);
+    claudeHistorySessions = list;
+    claudeHistoryCwd = cwd;
+  } catch {
+    claudeHistorySessions = [];
+    claudeHistoryCwd = cwd;
+  }
+  renderSessionList();
+}
+
+// One-click resume of a native agent history session (Claude / Codex)
+async function resumeAgentSession(s: ClaudeHistorySession): Promise<void> {
+  const themeId = resolveThemeId(currentThemeId, s.cwd);
+  const result = await window.posse.createPty(s.cwd, s.resumeCommand, themeId);
+  const now = Date.now();
+  attachPtySession({ ...result, title: s.title || result.title }, now);
+
+  updateEmptyState();
+  renderSessionList();
+  updateSessionTitleBar();
+  void renderFileTree();
+  setTimeout(() => {
+    const dims = termManager.getActiveDimensions();
+    if (dims) window.posse.resizePty(result.id, dims.cols, dims.rows);
+  }, 100);
+}
+
+// Resume a closed chat session
 async function restoreClosedChatSession(cs: ClosedChatSessionInfo): Promise<void> {
   try {
-    const result = await window.duocli.chatRestore(cs.id);
+    const result = await window.posse.chatRestore(cs.id);
     if (!result) return;
     const now = Date.now();
     chatSessionTitles.set(result.id, result.title);
     chatSessionCreateTimes.set(result.id, now);
-    // 从已关闭列表中移除
-    closedChatSessions = await window.duocli.closedChatRemove(cs.id);
+    // Remove from the closed list
+    closedChatSessions = await window.posse.closedChatRemove(cs.id);
     switchToTerminal();
     switchToChat(result.id);
     renderSessionList();
   } catch (e) {
-    console.error('恢复 Chat 会话失败:', e);
+    console.error('Failed to resume chat session:', e);
   }
 }
 
@@ -2111,8 +2247,8 @@ async function createSession(): Promise<boolean> {
   if (!currentCwd) {
     await browseCwd();
     if (!currentCwd) {
-      newSessionCreateBtn.textContent = '请选择工作目录';
-      setTimeout(() => { newSessionCreateBtn.textContent = '创建终端'; }, 1500);
+      newSessionCreateBtn.textContent = 'Please select a working directory';
+      setTimeout(() => { newSessionCreateBtn.textContent = 'Create Terminal'; }, 1500);
       return false;
     }
   }
@@ -2121,17 +2257,17 @@ async function createSession(): Promise<boolean> {
   const preset = presetSelect.value;
   const themeId = resolveThemeId(currentThemeId, currentCwd);
   lastPreset = preset;
-  localStorage.setItem('duocli_preset', preset);
-  const result = await window.duocli.createPty(currentCwd, preset, themeId);
+  localStorage.setItem('posse_preset', preset);
+  const result = await window.posse.createPty(currentCwd, preset, themeId);
   const now = Date.now();
   attachPtySession(result, now);
-  // 自定义预设：用用户定义的名称覆盖后端 fallback
+  // Custom preset: override the backend fallback with the user-defined name
   const customPreset = getCustomPresets().find(p =>
     preset === p.command || (p.autoFlag && preset === p.command + ' ' + p.autoFlag)
   );
   if (customPreset) {
     const isAuto = customPreset.autoFlag && preset === customPreset.command + ' ' + customPreset.autoFlag;
-    const displayName = isAuto ? customPreset.name + '全自动' : customPreset.name;
+    const displayName = isAuto ? customPreset.name + ' auto' : customPreset.name;
     sessionDisplayNames.set(result.id, displayName);
   }
   updateEmptyState();
@@ -2140,41 +2276,41 @@ async function createSession(): Promise<boolean> {
   void renderFileTree();
   setTimeout(() => {
     const dims = termManager.getActiveDimensions();
-    if (dims) window.duocli.resizePty(result.id, dims.cols, dims.rows);
+    if (dims) window.posse.resizePty(result.id, dims.cols, dims.rows);
   }, 100);
   return true;
 }
 
 function switchSession(id: string): void {
-  // 确保从 chat 视图切回终端视图
+  // Ensure we switch back from the chat view to the terminal view
   switchToTerminal();
 
   const prev = termManager.getActiveId();
   termManager.switchTo(id);
 
-  // 用户切换到该会话 → 清除所有状态指示灯（黄/绿→灰）
+  // User switched to this session → clear all status indicators (yellow/green → gray)
   const hadUnread = sessionUnread.delete(id);
   const hadBusy = sessionBusy.delete(id);
-  // 切换到不同会话才重渲染列表，避免重建 DOM 导致 dblclick 无法触发
+  // Only re-render the list when switching to a different session, to avoid rebuilding the DOM and breaking dblclick
   if (prev !== id || hadUnread || hadBusy) renderSessionList();
   updateSessionTitleBar();
   void renderFileTree();
   renderFileStatusbar();
   const dims = termManager.getActiveDimensions();
-  if (dims) window.duocli.resizePty(id, dims.cols, dims.rows);
+  if (dims) window.posse.resizePty(id, dims.cols, dims.rows);
 }
 
-// 点击 × 时弹确认
+// Show confirmation when clicking ×
 async function handleCloseClick(id: string): Promise<void> {
-  const title = sessionTitles.get(id) || '终端';
+  const title = sessionTitles.get(id) || 'Terminal';
   const action = await showConfirmDialog(title);
   if (action === 'cancel') return;
   destroySession(id);
 }
 
 async function handleChatCloseClick(id: string): Promise<void> {
-  const title = chatSessionTitles.get(id) || '新对话';
-  const action = await showConfirmDialog(title, '对话');
+  const title = chatSessionTitles.get(id) || 'New Chat';
+  const action = await showConfirmDialog(title, 'Chat');
   if (action === 'cancel') return;
   destroyChatSession(id);
 }
@@ -2191,7 +2327,7 @@ async function closeCurrentSession(): Promise<void> {
   if (activeId) await handleCloseClick(activeId);
 }
 
-// 彻底关闭终端
+// Fully close the terminal
 function clearSessionState(id: string): void {
   sessionTitles.delete(id);
   sessionThemes.delete(id);
@@ -2213,7 +2349,7 @@ function clearSessionState(id: string): void {
 }
 
 function destroySession(id: string): void {
-  window.duocli.destroyPty(id);
+  window.posse.destroyPty(id);
   clearSessionState(id);
   saveAutoContinueToStorage();
   termManager.destroy(id);
@@ -2227,7 +2363,7 @@ function destroySessions(ids: string[]): void {
   const uniqIds = Array.from(new Set(ids)).filter(id => sessionTitles.has(id));
   if (uniqIds.length === 0) return;
   for (const id of uniqIds) {
-    window.duocli.destroyPty(id);
+    window.posse.destroyPty(id);
     clearSessionState(id);
     termManager.destroy(id);
   }
@@ -2238,12 +2374,12 @@ function destroySessions(ids: string[]): void {
   void renderFileTree();
 }
 
-// ========== Chat 会话管理 ==========
+// ========== Chat session management ==========
 
 async function createChatSession(workspace?: string): Promise<void> {
   const ws = workspace || currentCwd || '';
   try {
-    const result = await window.duocli.chatCreate({ workspace: ws });
+    const result = await window.posse.chatCreate({ workspace: ws });
     if (!result) return;
     const now = Date.now();
     chatSessionTitles.set(result.id, result.title);
@@ -2251,19 +2387,19 @@ async function createChatSession(workspace?: string): Promise<void> {
     switchToChat(result.id);
     renderSessionList();
   } catch (e) {
-    console.error('创建聊天会话失败:', e);
+    console.error('Failed to create chat session:', e);
   }
 }
 
 function switchToChat(id: string): void {
-  // 隐藏终端区域，显示聊天区域
+  // Hide the terminal area, show the chat area
   terminalContent.style.display = 'none';
   chatContent.style.display = 'flex';
   chatContent.style.flexDirection = 'column';
   chatContent.style.height = '100%';
   chatEmptyState.style.display = 'none';
 
-  // 销毁旧的 chat view
+  // Destroy the old chat view
   if (activeChatId && activeChatId !== id) {
     const oldView = chatViews.get(activeChatId);
     oldView?.destroy();
@@ -2272,7 +2408,7 @@ function switchToChat(id: string): void {
 
   activeChatId = id;
 
-  // 创建或恢复 chat view
+  // Create or restore the chat view
   let view = chatViews.get(id);
   if (!view) {
     view = new ChatView(chatContent, id, {
@@ -2294,7 +2430,7 @@ function switchToTerminal(): void {
 }
 
 function destroyChatSession(id: string): void {
-  window.duocli.chatDestroy(id);
+  window.posse.chatDestroy(id);
   const view = chatViews.get(id);
   view?.destroy();
   chatViews.delete(id);
@@ -2308,42 +2444,42 @@ function destroyChatSession(id: string): void {
 }
 
 async function browseCwd(): Promise<void> {
-  cwdBrowseBtn.textContent = '选择中...';
+  cwdBrowseBtn.textContent = 'Selecting...';
   cwdBrowseBtn.setAttribute('disabled', 'true');
   try {
-    const folder = await window.duocli.selectFolder(currentCwd || undefined);
+    const folder = await window.posse.selectFolder(currentCwd || undefined);
     if (folder) {
       currentCwd = folder;
       cwdInput.value = folder;
-      localStorage.setItem('duocli_cwd', folder);
+      localStorage.setItem('posse_cwd', folder);
       addRecentCwd(folder);
       startFileWatcher(folder);
       void renderFileTree();
     }
   } catch (error) {
-    console.error('选择工作目录失败:', error);
-    cwdBrowseBtn.textContent = '选择失败';
-    setTimeout(() => { cwdBrowseBtn.textContent = '浏览'; }, 1500);
+    console.error('Failed to select working directory:', error);
+    cwdBrowseBtn.textContent = 'Selection failed';
+    setTimeout(() => { cwdBrowseBtn.textContent = 'Browse'; }, 1500);
     return;
   } finally {
     cwdBrowseBtn.removeAttribute('disabled');
-    if (cwdBrowseBtn.textContent === '选择中...') cwdBrowseBtn.textContent = '浏览';
+    if (cwdBrowseBtn.textContent === 'Selecting...') cwdBrowseBtn.textContent = 'Browse';
   }
 }
 
-// ========== 文件监听 ==========
+// ========== File watcher ==========
 
 function startFileWatcher(cwd: string): void {
   globalRecentFiles = [];
   renderFileStatusbar();
-  window.duocli.filewatcherStart(cwd);
+  window.posse.filewatcherStart(cwd);
 }
 
-// ========== AI 配置 ==========
+// ========== AI config ==========
 
 async function refreshAiConfig(): Promise<void> {
-  // 从主进程加载当前生效的配置，填充到表单
-  const config = await window.duocli.aiGetCurrentConfig();
+  // Load the currently active config from the main process and fill the form
+  const config = await window.posse.aiGetCurrentConfig();
   if (config) {
     aiFormatSelect.value = config.apiFormat || 'anthropic';
     aiBaseurlInput.value = config.baseUrl || '';
@@ -2361,13 +2497,13 @@ async function handleAiApply(): Promise<void> {
     model: aiModelInput.value.trim(),
   };
   if (!config.baseUrl) {
-    aiApplyBtn.textContent = '请填写 Base URL';
-    setTimeout(() => { aiApplyBtn.textContent = '保存'; }, 1500);
+    aiApplyBtn.textContent = 'Please enter a Base URL';
+    setTimeout(() => { aiApplyBtn.textContent = 'Save'; }, 1500);
     return;
   }
-  await window.duocli.aiApplyConfig(config);
-  aiApplyBtn.textContent = '已保存';
-  setTimeout(() => { aiApplyBtn.textContent = '保存'; }, 1500);
+  await window.posse.aiApplyConfig(config);
+  aiApplyBtn.textContent = 'Saved';
+  setTimeout(() => { aiApplyBtn.textContent = 'Save'; }, 1500);
 }
 
 async function handleAiTest(): Promise<void> {
@@ -2378,26 +2514,26 @@ async function handleAiTest(): Promise<void> {
     model: aiModelInput.value.trim(),
   };
   if (!config.baseUrl) {
-    aiTestBtn.textContent = '请先填写配置';
-    setTimeout(() => { aiTestBtn.textContent = '测试'; }, 1500);
+    aiTestBtn.textContent = 'Please fill in the config first';
+    setTimeout(() => { aiTestBtn.textContent = 'Test'; }, 1500);
     return;
   }
-  aiTestBtn.textContent = '测试中...';
+  aiTestBtn.textContent = 'Testing...';
   aiTestBtn.setAttribute('disabled', 'true');
   try {
-    const result = await window.duocli.aiTestConfig(config);
+    const result = await window.posse.aiTestConfig(config);
     if (result.ok) {
-      aiTestBtn.textContent = '✓ 连接成功';
+      aiTestBtn.textContent = '✓ Connected';
     } else {
-      aiTestBtn.textContent = '✗ 失败';
-      alert('AI 配置测试失败：\n' + (result.error || '未知错误'));
+      aiTestBtn.textContent = '✗ Failed';
+      alert('AI config test failed:\n' + (result.error || 'Unknown error'));
     }
   } catch (e: any) {
-    aiTestBtn.textContent = '✗ 失败';
-    alert('AI 配置测试失败：\n' + (e.message || '未知错误'));
+    aiTestBtn.textContent = '✗ Failed';
+    alert('AI config test failed:\n' + (e.message || 'Unknown error'));
   } finally {
     aiTestBtn.removeAttribute('disabled');
-    setTimeout(() => { aiTestBtn.textContent = '测试'; }, 2000);
+    setTimeout(() => { aiTestBtn.textContent = 'Test'; }, 2000);
   }
 }
 
@@ -2412,19 +2548,19 @@ function switchTab(tabName: string): void {
   if (tabName === 'devin-accounts') refreshDevinAccounts();
 }
 
-// ========== 事件绑定 ==========
+// ========== Event bindings ==========
 
 cwdBrowseBtn.addEventListener('click', browseCwd);
-cwdOpenBtn.addEventListener('click', () => { if (currentCwd) window.duocli.openFolder(currentCwd); });
+cwdOpenBtn.addEventListener('click', () => { if (currentCwd) window.posse.openFolder(currentCwd); });
 
-// 最近工作目录下拉
+// Recent working directories dropdown
 function renderRecentCwdDropdown(): void {
   cwdRecentDropdown.innerHTML = '';
   const list = getRecentCwds();
   if (list.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'cwd-recent-empty';
-    empty.textContent = '暂无最近目录';
+    empty.textContent = 'No recent directories';
     cwdRecentDropdown.appendChild(empty);
     return;
   }
@@ -2436,7 +2572,7 @@ function renderRecentCwdDropdown(): void {
     item.addEventListener('click', () => {
       currentCwd = path;
       cwdInput.value = path;
-      localStorage.setItem('duocli_cwd', path);
+      localStorage.setItem('posse_cwd', path);
       addRecentCwd(path);
       startFileWatcher(path);
       void renderFileTree();
@@ -2465,7 +2601,7 @@ cwdInput.addEventListener('change', () => {
   const v = cwdInput.value.trim();
   if (v) {
     currentCwd = v;
-    localStorage.setItem('duocli_cwd', v);
+    localStorage.setItem('posse_cwd', v);
     addRecentCwd(v);
     startFileWatcher(v);
     void renderFileTree();
@@ -2473,9 +2609,9 @@ cwdInput.addEventListener('change', () => {
 });
 cwdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') cwdInput.blur(); });
 
-// ========== 面板收起/展开与拖拽功能 ==========
+// ========== Panel collapse/expand and resizing ==========
 
-// 左侧目录树收起/展开
+// Left file-tree collapse/expand
 let fileTreeCollapsed = false;
 let fileTreeLastWidth = 220;
 
@@ -2492,10 +2628,10 @@ fileTreeToggle.addEventListener('click', () => {
     fileTreeToggle.classList.remove('collapsed');
     fileTreeToggle.textContent = '\u25C4';
   }
-  localStorage.setItem('duocli_filetree_collapsed', String(fileTreeCollapsed));
+  localStorage.setItem('posse_filetree_collapsed', String(fileTreeCollapsed));
 });
 
-// 右侧边栏收起/展开
+// Right sidebar collapse/expand
 let sidebarCollapsed = false;
 let sidebarLastWidth = 260;
 
@@ -2512,10 +2648,10 @@ sidebarToggle.addEventListener('click', () => {
     sidebarToggle.classList.remove('collapsed');
     sidebarToggle.textContent = '\u25B6';
   }
-  localStorage.setItem('duocli_sidebar_collapsed', String(sidebarCollapsed));
+  localStorage.setItem('posse_sidebar_collapsed', String(sidebarCollapsed));
 });
 
-// 拖拽调整宽度
+// Drag to resize width
 interface DragState {
   isDragging: boolean;
   panel: HTMLElement | null;
@@ -2534,7 +2670,7 @@ const dragState: DragState = {
   maxWidth: 0
 };
 
-// 左侧目录树拖拽
+// Left file-tree drag
 fileTreeResizer.addEventListener('mousedown', (e) => {
   if (fileTreeCollapsed) return;
   e.preventDefault();
@@ -2547,7 +2683,7 @@ fileTreeResizer.addEventListener('mousedown', (e) => {
   fileTreeResizer.classList.add('active');
 });
 
-// 右侧边栏拖拽
+// Right sidebar drag
 sidebarResizer.addEventListener('mousedown', (e) => {
   if (sidebarCollapsed) return;
   e.preventDefault();
@@ -2579,34 +2715,34 @@ document.addEventListener('mouseup', () => {
     fileTreeResizer.classList.remove('active');
     sidebarResizer.classList.remove('active');
     if (dragState.panel === fileTreePanel) {
-      localStorage.setItem('duocli_filetree_width', String(fileTreePanel.offsetWidth));
+      localStorage.setItem('posse_filetree_width', String(fileTreePanel.offsetWidth));
     } else if (dragState.panel === sidebar) {
-      localStorage.setItem('duocli_sidebar_width', String(sidebar.offsetWidth));
+      localStorage.setItem('posse_sidebar_width', String(sidebar.offsetWidth));
     }
     dragState.panel = null;
   }
 });
 
-// 恢复保存的面板状态
+// Restore saved panel state
 (function restorePanelStates() {
-  const savedFileTreeWidth = localStorage.getItem('duocli_filetree_width');
+  const savedFileTreeWidth = localStorage.getItem('posse_filetree_width');
   if (savedFileTreeWidth) {
     fileTreePanel.style.width = savedFileTreeWidth + 'px';
     fileTreeLastWidth = parseInt(savedFileTreeWidth);
   }
-  const savedSidebarWidth = localStorage.getItem('duocli_sidebar_width');
+  const savedSidebarWidth = localStorage.getItem('posse_sidebar_width');
   if (savedSidebarWidth) {
     sidebar.style.width = savedSidebarWidth + 'px';
     sidebarLastWidth = parseInt(savedSidebarWidth);
   }
-  const savedFileTreeCollapsed = localStorage.getItem('duocli_filetree_collapsed');
+  const savedFileTreeCollapsed = localStorage.getItem('posse_filetree_collapsed');
   if (savedFileTreeCollapsed === 'true') {
     fileTreeCollapsed = true;
     fileTreePanel.classList.add('collapsed');
     fileTreeToggle.classList.add('collapsed');
     fileTreeToggle.textContent = '\u25B6';
   }
-  const savedSidebarCollapsed = localStorage.getItem('duocli_sidebar_collapsed');
+  const savedSidebarCollapsed = localStorage.getItem('posse_sidebar_collapsed');
   if (savedSidebarCollapsed === 'true') {
     sidebarCollapsed = true;
     sidebar.classList.add('collapsed');
@@ -2617,18 +2753,31 @@ document.addEventListener('mouseup', () => {
 
 fileTreeRefreshBtn.addEventListener('click', () => { void refreshFileTree(true); });
 
-// 打开目录按钮
+// Switch-directory button: view any directory's history without first creating a session
+fileTreePickBtn.addEventListener('click', () => {
+  void (async () => {
+    const dir = await window.posse.selectFolder(currentCwd);
+    if (dir) {
+      currentCwd = dir;
+      addRecentCwd(dir);
+      fileTreeChildrenCache.clear();
+      await renderFileTree();
+    }
+  })();
+});
+
+// Open-directory button
 fileTreeOpenBtn.addEventListener('click', () => {
   const activeId = termManager.getActiveId();
   if (activeId) {
     const cwd = sessionCwds.get(activeId);
     if (cwd) {
-      window.duocli.openFolder(cwd);
+      window.posse.openFolder(cwd);
     }
   }
 });
 
-// 目录自动刷新 - 每30秒刷新一次
+// Directory auto-refresh - refresh every 30 seconds
 let fileTreeAutoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 function startFileTreeAutoRefresh(): void {
   if (fileTreeAutoRefreshTimer) return;
@@ -2645,14 +2794,14 @@ function stopFileTreeAutoRefresh(): void {
     fileTreeAutoRefreshTimer = null;
   }
 }
-// 启动自动刷新
+// Start auto-refresh
 startFileTreeAutoRefresh();
 
-// 桌面端拖拽文件到终端区域：自动粘贴文件路径
-// 在 document 层面监听，确保拖拽到 xterm 内部也能捕获
+// Desktop: dragging files onto the terminal area auto-pastes their paths
+// Listen at the document level so drops inside xterm are captured too
 document.addEventListener('dragover', (e) => {
   if (!e.dataTransfer) return;
-  // 只有当数据来自外部文件时才处理
+  // Only handle data that comes from external files
   if (e.dataTransfer.types.includes('Files')) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
@@ -2669,12 +2818,12 @@ document.addEventListener('dragleave', (e) => {
 document.addEventListener('drop', (e) => {
   e.preventDefault();
   terminalArea.classList.remove('drag-over');
-  // 只有当数据来自外部文件时才处理
+  // Only handle data that comes from external files
   const files = Array.from(e.dataTransfer?.files || []);
   if (!files.length) return;
   const activeId = getActiveSessionId();
   if (!activeId) {
-    alert('请先选择一个终端会话');
+    alert('Please select a terminal session first');
     return;
   }
   const payload = files.map((f) => quotePathForShell(f.path)).join(' ') + ' ';
@@ -2684,11 +2833,11 @@ document.addEventListener('drop', (e) => {
 function openNewSessionDialog(cwd?: string): void {
   const targetCwd = (cwd || currentCwd || '').trim();
   cwdInput.value = targetCwd;
-  // 程序设值不触发 change 事件，需手动同步 currentCwd，
-  // 否则点击分组头加号创建的终端仍走旧 currentCwd
+  // Setting the value programmatically doesn't fire a change event, so sync currentCwd manually;
+  // otherwise terminals created via the group-header "+" would still use the old currentCwd
   if (targetCwd && targetCwd !== currentCwd) {
     currentCwd = targetCwd;
-    localStorage.setItem('duocli_cwd', targetCwd);
+    localStorage.setItem('posse_cwd', targetCwd);
     addRecentCwd(targetCwd);
     startFileWatcher(targetCwd);
     void renderFileTree();
@@ -2707,8 +2856,8 @@ function closeNewSessionDialog(): void {
 
 toolbarNewBtn.addEventListener('click', () => { openNewSessionDialog(); });
 toolbarTerminalClientBtn.addEventListener('click', async () => {
-  const url = await window.duocli.getTerminalClientUrl();
-  await window.duocli.openUrl(url);
+  const url = await window.posse.getTerminalClientUrl();
+  await window.posse.openUrl(url);
 });
 newSessionCloseBtn.addEventListener('click', () => { closeNewSessionDialog(); });
 newSessionCancelBtn.addEventListener('click', () => { closeNewSessionDialog(); });
@@ -2720,7 +2869,7 @@ newSessionCreateBtn.addEventListener('click', async () => {
   if (ok) closeNewSessionDialog();
 });
 
-// 自定义预设按钮
+// Custom preset buttons
 presetAddBtn.addEventListener('click', async () => {
   const result = await showPresetDialog();
   if (result) {
@@ -2728,7 +2877,7 @@ presetAddBtn.addEventListener('click', async () => {
     list.push(result);
     saveCustomPresets(list);
     renderPresetSelect();
-    // 自动选中新建的预设
+    // Auto-select the newly created preset
     presetSelect.value = result.autoFlag ? result.command + ' ' + result.autoFlag : result.command;
   }
 });
@@ -2737,7 +2886,7 @@ presetManageBtn.addEventListener('click', () => {
   showPresetManageDialog();
 });
 
-// Tab 切换
+// Tab switching
 sidebarTabs.forEach((tab) => {
   tab.addEventListener('click', () => {
     const tabName = tab.getAttribute('data-tab');
@@ -2745,86 +2894,86 @@ sidebarTabs.forEach((tab) => {
   });
 });
 
-// AI 配置按钮
+// AI config buttons
 aiTestBtn.addEventListener('click', () => handleAiTest());
 aiApplyBtn.addEventListener('click', () => handleAiApply());
 aiKeyToggle.addEventListener('click', () => {
   aiApikeyInput.type = aiApikeyInput.type === 'password' ? 'text' : 'password';
 });
 
-// ========== IPC 监听 ==========
+// ========== IPC listeners ==========
 
-window.duocli.onPtyData((id, data) => {
+window.posse.onPtyData((id, data) => {
   termManager.write(id, data);
   if (sessionTitles.has(id)) {
     sessionUpdateTimes.set(id, Date.now());
   }
-  // 所有会话都追踪状态（工作中/等待输入），确保切换查看后状态不丢失
+  // Track status for all sessions (busy/waiting), so the state survives switching away and back
   const activeId = termManager.getActiveId();
   if (sessionTitles.has(id)) {
-    // 有新输出就优先显示"工作中"（黄点），并清掉旧的"待处理"（绿点）
+    // On new output, prefer showing "busy" (yellow dot) and clear the old "pending" (green dot)
     const prevBusy = sessionBusy.has(id);
     const prevUnread = sessionUnread.has(id);
     sessionBusy.add(id);
     sessionUnread.delete(id);
     if (!prevBusy || prevUnread) renderSessionList();
 
-    // 累积最近数据用于提示符检测（保留最后 500 字符）
+    // Accumulate recent data for prompt detection (keep the last 500 chars)
     const prev = recentDataBuffer.get(id) || '';
     recentDataBuffer.set(id, (prev + data).slice(-500));
 
-    // 去掉 ANSI 转义后检测 AI CLI 提示符
-    // 改进：只匹配真正的提示符，排除 HTML 标签等误判
+    // Detect the AI CLI prompt after stripping ANSI escapes
+    // Improvement: only match real prompts, excluding false positives like HTML tags
     const plain = recentDataBuffer.get(id)!.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
-    // 催工开启时，自动确认 CLI 各类确认提示（proceed / make this edit / 等）
+    // When the loop is on, auto-confirm the CLI's various confirmation prompts (proceed / make this edit / etc.)
     const acConfig = sessionAutoContinue.get(id);
     if (acConfig?.enabled && (acConfig.autoAgree ?? true) && /Do you want to .*\?/.test(plain)) {
-      // 数选项行数（格式: "  1. xxx"、"  2. xxx"...）
+      // Count the option lines (format: "  1. xxx", "  2. xxx"...)
       const optionCount = (plain.match(/^\s+\d+\.\s/gm) || []).length;
-      // 3个选项: 1=Yes, 2=Yes永久, 3=No → 选2
-      // 2个选项: 1=Yes, 2=No → 选1
+      // 3 options: 1=Yes, 2=Yes (always), 3=No → choose 2
+      // 2 options: 1=Yes, 2=No → choose 1
       const choice = optionCount >= 3 ? '2' : '1';
       const delayMs = (acConfig.autoAgreeDelaySec ?? AUTO_AGREE_DEFAULT_DELAY_SEC) * 1000;
       setTimeout(() => {
-        window.duocli.writePty(id, choice);
-        window.duocli.writePty(id, String.fromCharCode(0x0d));
-        console.log(`[AutoConfirm] 会话 ${id} 检测到${optionCount}个选项，选择 ${choice}，延后 ${delayMs}ms`);
+        window.posse.writePty(id, choice);
+        window.posse.writePty(id, String.fromCharCode(0x0d));
+        console.log(`[AutoConfirm] Session ${id} detected ${optionCount} options, choosing ${choice}, delayed ${delayMs}ms`);
       }, delayMs);
-      // 清除 buffer 避免重复触发
+      // Clear the buffer to avoid re-triggering
       recentDataBuffer.delete(id);
     }
 
-    // 提示符检测：按行拆分，检查最后几行是否包含提示符
+    // Prompt detection: split by line and check whether the last few lines contain a prompt
     const lines = plain.split('\n').map(l => l.trimEnd()).filter(l => l.length > 0);
     const lastLines = lines.slice(-3).join('\n');
-    // 排除 Claude Code 工作中状态：xxx… (xxx) 等 spinner 模式
+    // Exclude Claude Code's busy state: spinner patterns like xxx… (xxx)
     const cliWorking = /\w+…\s*\(/.test(lastLines);
-    // Shell 提示符
+    // Shell prompt
     const promptLike = /(^|[\s\n])(❯|›|▷|\$|>|%|➜)\s*$/.test(lastLines) && !/>\s*[a-zA-Z]/.test(lastLines);
     const shellPrompt = /[\]#$%>❯›]\s*$/.test(lastLines);
     const hasPrompt = (promptLike || shellPrompt) && !cliWorking;
 
     if (hasPrompt) {
-      // 检测到提示符 → 从工作中转为等待输入（黄→绿/灰）
+      // Prompt detected → move from busy to waiting-for-input (yellow → green/gray)
       clearTimeout(unreadTimers.get(id));
       unreadTimers.delete(id);
       recentDataBuffer.delete(id);
       const wasBusy = sessionBusy.delete(id);
       const hadUnread = sessionUnread.has(id);
-      // 当前活跃会话直接变灰（用户正在看着）；非活跃会话标记为待处理（绿点）
+      // The active session goes straight to gray (the user is watching it); inactive sessions are marked pending (green dot)
       if (id !== activeId && !sessionUnread.has(id)) {
         sessionUnread.add(id);
       }
       const nowUnread = sessionUnread.has(id);
       if (wasBusy || hadUnread !== nowUnread) renderSessionList();
     } else {
-      // 未检测到提示符：用静默超时兜底（15秒无新输出 → 黄→绿/灰）
-      // 避免提示符匹配不到时永远卡在黄灯
+      // No prompt detected: fall back to an idle timeout (no new output for 15s → yellow → green/gray)
+      // Avoids being stuck on the yellow dot forever when the prompt isn't matched
       clearTimeout(unreadTimers.get(id));
       unreadTimers.set(id, setTimeout(() => {
         unreadTimers.delete(id);
         recentDataBuffer.delete(id);
-        // 超时兜底：如果仍然是黄灯状态，转为绿灯或灰灯
+        // Timeout fallback: if still on the yellow dot, switch to green or gray
         if (sessionBusy.has(id)) {
           sessionBusy.delete(id);
           const currentActiveId = termManager.getActiveId();
@@ -2838,7 +2987,7 @@ window.duocli.onPtyData((id, data) => {
   }
 });
 
-window.duocli.onTitleUpdate((id, title) => {
+window.posse.onTitleUpdate((id, title) => {
   if (sessionTitleLocked.has(id)) return;
   if (sessionTitles.has(id)) {
     sessionTitles.set(id, title);
@@ -2848,15 +2997,15 @@ window.duocli.onTitleUpdate((id, title) => {
   }
 });
 
-// Chat 会话标题更新（全局处理，避免只在 ChatView 内部监听导致丢失）
-window.duocli.onChatTitleUpdate((id, title) => {
+// Chat session title updates (handled globally so they aren't lost when only ChatView listens)
+window.posse.onChatTitleUpdate((id, title) => {
   if (chatSessionTitles.has(id)) {
     chatSessionTitles.set(id, title);
     renderSessionList();
   }
 });
 
-window.duocli.onPtyExit((id) => {
+window.posse.onPtyExit((id) => {
   clearSessionState(id);
   saveAutoContinueToStorage();
   termManager.destroy(id);
@@ -2866,8 +3015,8 @@ window.duocli.onPtyExit((id) => {
   void renderFileTree();
 });
 
-// 手机端远程创建了会话，桌面端同步显示
-window.duocli.onRemoteCreated((info) => {
+// A session was created remotely from mobile; mirror it on the desktop
+window.posse.onRemoteCreated((info) => {
   if (sessionTitles.has(info.id)) return;
   const now = Date.now();
   attachPtySession(info, now);
@@ -2877,13 +3026,13 @@ window.duocli.onRemoteCreated((info) => {
   void renderFileTree();
   setTimeout(() => {
     const dims = termManager.getActiveDimensions();
-    if (dims) window.duocli.resizePty(info.id, dims.cols, dims.rows);
+    if (dims) window.posse.resizePty(info.id, dims.cols, dims.rows);
   }, 100);
 });
 
 async function restoreDaemonSessions(): Promise<void> {
   try {
-    const sessions = await window.duocli.getSessions();
+    const sessions = await window.posse.getSessions();
     const now = Date.now();
     for (const info of sessions) {
       if (sessionTitles.has(info.id)) continue;
@@ -2896,7 +3045,7 @@ async function restoreDaemonSessions(): Promise<void> {
     setTimeout(() => {
       const activeId = termManager.getActiveId();
       const dims = termManager.getActiveDimensions();
-      if (activeId && dims) window.duocli.resizePty(activeId, dims.cols, dims.rows);
+      if (activeId && dims) window.posse.resizePty(activeId, dims.cols, dims.rows);
     }, 100);
   } catch (error) {
     console.error('[Renderer] Failed to restore PTY daemon sessions:', error);
@@ -2905,7 +3054,7 @@ async function restoreDaemonSessions(): Promise<void> {
 
 void restoreDaemonSessions();
 
-// 远程服务器信息处理：合并推送/拉取预设
+// Remote server info handling: merge pushed/pulled presets
 async function handleRemoteServerInfo(info: typeof remoteServerInfo) {
   if (!info) return;
   console.log('[Renderer] Remote server info:', info);
@@ -2917,13 +3066,13 @@ async function handleRemoteServerInfo(info: typeof remoteServerInfo) {
   await reconcilePresetsWithServer('remote-ready');
 }
 
-// 方式1：IPC 推送（可能因竞态丢失）
-window.duocli.onRemoteServerInfo(handleRemoteServerInfo);
+// Method 1: IPC push (may be lost to a race)
+window.posse.onRemoteServerInfo(handleRemoteServerInfo);
 
-// 方式2：渲染进程加载后主动拉取；服务器启动和页面加载都有竞态，需短时重试。
+// Method 2: the renderer actively pulls after load; server startup and page load both race, so retry briefly.
 async function waitForRemoteServerInfo(): Promise<void> {
   for (let i = 0; i < 40 && !remoteServerInfo; i++) {
-    const info = await window.duocli.getRemoteServerInfo();
+    const info = await window.posse.getRemoteServerInfo();
     if (info && !remoteServerInfo) {
       await handleRemoteServerInfo(info);
       return;
@@ -2937,28 +3086,28 @@ async function waitForRemoteServerInfo(): Promise<void> {
 
 void waitForRemoteServerInfo();
 
-// ========== 已关闭会话：启动加载 + 实时更新 ==========
-window.duocli.closedSessionsList().then(sessions => {
+// ========== Closed sessions: load on startup + live updates ==========
+window.posse.closedSessionsList().then(sessions => {
   closedSessions = sessions;
   renderSessionList();
 });
-window.duocli.onClosedSessionsUpdate((sessions) => {
+window.posse.onClosedSessionsUpdate((sessions) => {
   closedSessions = sessions;
   renderSessionList();
 });
 
-// ========== 已关闭 Chat 会话：启动加载 + 实时更新 ==========
-window.duocli.closedChatList().then(sessions => {
+// ========== Closed chat sessions: load on startup + live updates ==========
+window.posse.closedChatList().then(sessions => {
   closedChatSessions = sessions;
   renderSessionList();
 });
-window.duocli.onClosedChatUpdate((sessions) => {
+window.posse.onClosedChatUpdate((sessions) => {
   closedChatSessions = sessions;
   renderSessionList();
 });
 
-// 自动切号状态监听
-window.duocli.onAutoSwitchStatus((id, status, detail) => {
+// Auto account-switch status listener
+window.posse.onAutoSwitchStatus((id, status, detail) => {
   if (status === 'idle') {
     sessionAutoSwitchStatus.delete(id);
   } else {
@@ -2967,14 +3116,14 @@ window.duocli.onAutoSwitchStatus((id, status, detail) => {
   renderSessionList();
 });
 
-// 催工配置：手机端通过 main 进程读取桌面端配置
-window.duocli.onGetAutoContinueConfig((sessionId) => {
+// Auto-continue config: mobile reads the desktop config via the main process
+window.posse.onGetAutoContinueConfig((sessionId) => {
   const config = sessionAutoContinue.get(sessionId);
-  window.duocli.sendAutoContinueConfig(sessionId, config || null);
+  window.posse.sendAutoContinueConfig(sessionId, config || null);
 });
 
-// 催工配置：手机端通过 main 进程写入桌面端配置
-window.duocli.onSetAutoContinueConfig((sessionId, config) => {
+// Auto-continue config: mobile writes the desktop config via the main process
+window.posse.onSetAutoContinueConfig((sessionId, config) => {
   if (!config || !hasSessionInUI(sessionId)) return;
   const existing = sessionAutoContinue.get(sessionId) || {
     enabled: false,
@@ -2999,8 +3148,8 @@ window.duocli.onSetAutoContinueConfig((sessionId, config) => {
   renderSessionList();
 });
 
-// 监听文件变化（归到当前活跃会话）
-window.duocli.onFileChange((filename) => {
+// Listen for file changes (attributed to the currently active session)
+window.posse.onFileChange((filename) => {
   const idx = globalRecentFiles.indexOf(filename);
   if (idx !== -1) globalRecentFiles.splice(idx, 1);
   globalRecentFiles.unshift(filename);
@@ -3010,14 +3159,14 @@ window.duocli.onFileChange((filename) => {
   renderFileStatusbar();
 });
 
-// 右键状态栏 → 切换编辑器
+// Right-click the statusbar → switch editor
 fileStatusbar.addEventListener('contextmenu', async (e) => {
   e.preventDefault();
   await selectEditor();
 });
 
 async function selectEditor(): Promise<void> {
-  const editorPath = await window.duocli.filewatcherSelectEditor();
+  const editorPath = await window.posse.filewatcherSelectEditor();
   if (editorPath) {
     currentEditorName = editorPath.split(/[/\\]/).pop()?.replace(/\.(app|exe)$/, '') || editorPath;
     updateEditorStatusbar();
@@ -3027,9 +3176,9 @@ async function selectEditor(): Promise<void> {
 function updateEditorStatusbar(): void {
   const icon = document.getElementById('file-statusbar-icon')!;
   if (currentEditorName) {
-    icon.title = `编辑器: ${currentEditorName}（右键更换）`;
+    icon.title = `Editor: ${currentEditorName} (right-click to change)`;
   } else {
-    icon.title = '点击选择编辑器';
+    icon.title = 'Click to select an editor';
   }
 }
 
@@ -3039,7 +3188,7 @@ function renderFileStatusbar(): void {
   if (files.length === 0) {
     const placeholder = document.createElement('span');
     placeholder.className = 'file-statusbar-placeholder';
-    placeholder.textContent = '等待文件变化...';
+    placeholder.textContent = 'Waiting for file changes...';
     fileStatusbarFiles.appendChild(placeholder);
     return;
   }
@@ -3054,43 +3203,43 @@ function renderFileStatusbar(): void {
         await selectEditor();
         if (!currentEditorName) return;
       }
-      window.duocli.filewatcherOpen(currentCwd + '/' + filePath);
+      window.posse.filewatcherOpen(currentCwd + '/' + filePath);
     });
     fileStatusbarFiles.appendChild(item);
   }
 }
 
-// 启动时如果已有工作目录，开始监听
+// On startup, if a working directory already exists, start watching it
 if (currentCwd) {
   startFileWatcher(currentCwd);
 }
 void renderFileTree();
 
-// 启动时加载已保存的编辑器偏好
-window.duocli.filewatcherGetEditor().then((editorPath) => {
+// On startup, load the saved editor preference
+window.posse.filewatcherGetEditor().then((editorPath) => {
   if (editorPath) {
     currentEditorName = editorPath.split(/[/\\]/).pop()?.replace(/\.(app|exe)$/, '') || editorPath;
     updateEditorStatusbar();
   }
 });
 
-// 每60秒刷新时间显示
+// Refresh the relative time display every 60 seconds
 setInterval(() => {
   if (sessionTitles.size > 0) renderSessionList();
 }, 60000);
 
-// ========== 侧边栏箭头键切换会话 ==========
+// ========== Sidebar arrow-key session switching ==========
 
-// 根据当前活跃会话，切换到上一个/下一个（跳过已关闭等不可导航条目）
+// Switch to the previous/next session relative to the active one (skipping non-navigable items like closed ones)
 function navigateSession(direction: 'up' | 'down'): void {
   const items = sessionList.querySelectorAll<HTMLElement>('.session-item');
   if (items.length === 0) return;
 
-  // 只收集可导航的条目（有 data-session-id 的）
+  // Collect only navigable items (those with data-session-id)
   const navigable = Array.from(items).filter(el => el.dataset.sessionId);
   if (navigable.length === 0) return;
 
-  // 找当前活跃条目在可导航列表中的索引
+  // Find the active item's index in the navigable list
   let activeIdx = -1;
   for (let i = 0; i < navigable.length; i++) {
     if (navigable[i].classList.contains('active')) {
@@ -3099,7 +3248,7 @@ function navigateSession(direction: 'up' | 'down'): void {
     }
   }
 
-  // 计算目标索引
+  // Compute the target index
   let targetIdx: number;
   if (activeIdx === -1) {
     targetIdx = direction === 'down' ? 0 : navigable.length - 1;
@@ -3113,7 +3262,7 @@ function navigateSession(direction: 'up' | 'down'): void {
   const sessionId = targetItem.dataset.sessionId!;
   const sessionType = targetItem.dataset.sessionType;
 
-  // 触发切换
+  // Trigger the switch
   if (sessionType === 'chat') {
     switchToTerminal();
     switchToChat(sessionId);
@@ -3121,15 +3270,15 @@ function navigateSession(direction: 'up' | 'down'): void {
     switchSession(sessionId);
   }
 
-  // 滚动到可见区域
+  // Scroll into view
   targetItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-// 在 renderSessionList 中给每个 session-item 打上 data 属性
-// （在 renderSessionList 末尾的 PTY 和 Chat 渲染处已有点击事件，
-//   这里需要在创建 DOM 时标记 sessionId 和 sessionType）
+// renderSessionList tags each session-item with data attributes
+// (the PTY and Chat rendering at the end of renderSessionList already wire click handlers;
+//  sessionId and sessionType are marked when the DOM is created)
 
-// 全局键盘监听：侧边栏有焦点时拦截上下箭头
+// Global keyboard listener: intercept up/down arrows when the sidebar has focus
 sessionList.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault();
@@ -3137,47 +3286,28 @@ sessionList.addEventListener('keydown', (e) => {
   }
 });
 
-// 让 sessionList 可以获取焦点（箭头导航的前提）
+// Make sessionList focusable (required for arrow navigation)
 sessionList.setAttribute('tabindex', '0');
 
-window.duocli.onCloseCurrentSession(() => {
+window.posse.onCloseCurrentSession(() => {
   void closeCurrentSession();
 });
 
-// ========== 版权信息交互 ==========
+// ========== Footer interactions ==========
 
-// GitHub 链接
+// GitHub link
 document.getElementById('footer-github')!.addEventListener('click', (e) => {
   e.preventDefault();
-  window.duocli.openUrl('https://github.com/saddism/DuoCLI');
+  window.posse.openUrl('https://github.com/saddism/DuoCLI');
 });
 
-window.duocli.getAppVersion().then((version) => {
+window.posse.getAppVersion().then((version) => {
   appVersionEl.textContent = `v${version}`;
 }).catch(() => {
   appVersionEl.textContent = 'v?';
 });
 
-// 点击提示文字弹出二维码
-document.querySelector('.footer-tip')!.addEventListener('click', () => {
-  const overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  const dialog = document.createElement('div');
-  dialog.className = 'qrcode-dialog';
-  dialog.innerHTML = `
-    <img src="qrcode.jpg" class="qrcode-img" />
-    <div class="qrcode-text">扫码关注「壮哥的壮」</div>
-    <div class="qrcode-sub">心中默念"大壮好大"，祈祷 +1</div>
-  `;
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-  dialog.addEventListener('click', () => overlay.remove());
-});
-
-// ========== Devin 账号管理 ==========
+// ========== Devin account management ==========
 
 let devinLoading = false;
 
@@ -3185,10 +3315,10 @@ async function refreshDevinAccounts(): Promise<void> {
   if (devinLoading) return;
   devinLoading = true;
   try {
-    const data = await window.duocli.devinAccountsList();
+    const data = await window.posse.devinAccountsList();
     renderDevinAccountsList(data);
   } catch {
-    devinAccountsList.innerHTML = '<div class="devin-accounts-empty">加载失败</div>';
+    devinAccountsList.innerHTML = '<div class="devin-accounts-empty">Failed to load</div>';
   } finally {
     devinLoading = false;
   }
@@ -3197,23 +3327,23 @@ async function refreshDevinAccounts(): Promise<void> {
 function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }): void {
   devinAccountsList.innerHTML = '';
   if (!data.accounts || data.accounts.length === 0) {
-    devinAccountsList.innerHTML = '<div class="devin-accounts-empty">暂无账号，请在下方添加</div>';
-    devinCurrentLabel.textContent = '当前: 无';
+    devinAccountsList.innerHTML = '<div class="devin-accounts-empty">No accounts yet; add one below</div>';
+    devinCurrentLabel.textContent = 'Current: none';
     return;
   }
   const cur = data.accounts[data.currentIndex];
-  devinCurrentLabel.textContent = `当前: ${cur ? cur.email.split('@')[0] : '无'}`;
+  devinCurrentLabel.textContent = `Current: ${cur ? cur.email.split('@')[0] : 'none'}`;
 
   for (let i = 0; i < data.accounts.length; i++) {
     const acc = data.accounts[i];
     const isActive = i === data.currentIndex;
 
-    // 状态圆点
+    // Status dot
     let dotClass = 'idle';
     if (acc.lastLogin && !acc.lastError) dotClass = 'ok';
     else if (acc.lastError) dotClass = 'err';
 
-    // 配额
+    // Quota
     const quota = acc.quota;
     let quotaText = '--';
     let quotaClass = '';
@@ -3225,7 +3355,7 @@ function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }
     const item = document.createElement('div');
     item.className = 'devin-account-item' + (isActive ? ' active' : '');
 
-    // 时间信息
+    // Time info
     let meta = '';
     if (acc.planName) meta = acc.planName;
     if (acc.lastLogin) {
@@ -3243,62 +3373,62 @@ function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }
       <div class="devin-account-bottom">
         <span class="devin-account-meta">${escHtml(meta)}</span>
         <div class="devin-account-actions">
-          <button class="devin-quota-one-btn" title="刷新额度">&#8635;</button>
-          <button class="devin-switch-btn" ${isActive ? 'disabled' : ''}>切换</button>
-          <button class="devin-delete-btn">删除</button>
+          <button class="devin-quota-one-btn" title="Refresh quota">&#8635;</button>
+          <button class="devin-switch-btn" ${isActive ? 'disabled' : ''}>Switch</button>
+          <button class="devin-delete-btn">Delete</button>
         </div>
       </div>
     `;
 
-    // 切换按钮
+    // Switch button
     const switchBtn = item.querySelector('.devin-switch-btn') as HTMLButtonElement;
     switchBtn.addEventListener('click', async () => {
-      switchBtn.textContent = '切换中...';
+      switchBtn.textContent = 'Switching...';
       switchBtn.disabled = true;
       try {
-        const result = await window.duocli.devinAccountsSwitch({ email: acc.email });
+        const result = await window.posse.devinAccountsSwitch({ email: acc.email });
         if (result.ok) {
           switchBtn.textContent = '✓';
           await refreshDevinAccounts();
         } else {
-          switchBtn.textContent = '失败';
-          alert('切换失败：' + (result.error || '未知错误'));
-          setTimeout(() => { switchBtn.textContent = '切换'; switchBtn.disabled = false; }, 1500);
+          switchBtn.textContent = 'Failed';
+          alert('Switch failed: ' + (result.error || 'Unknown error'));
+          setTimeout(() => { switchBtn.textContent = 'Switch'; switchBtn.disabled = false; }, 1500);
         }
       } catch {
-        switchBtn.textContent = '切换';
+        switchBtn.textContent = 'Switch';
         switchBtn.disabled = false;
       }
     });
 
-    // 删除按钮
+    // Delete button
     const deleteBtn = item.querySelector('.devin-delete-btn') as HTMLButtonElement;
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm(`确认删除账号 ${acc.email}？`)) return;
+      if (!confirm(`Delete account ${acc.email}?`)) return;
       deleteBtn.textContent = '...';
       deleteBtn.disabled = true;
       try {
-        const result = await window.duocli.devinAccountsRemove(acc.email);
+        const result = await window.posse.devinAccountsRemove(acc.email);
         if (result.ok) {
           await refreshDevinAccounts();
         } else {
-          alert('删除失败：' + (result.error || '未知错误'));
-          deleteBtn.textContent = '删除';
+          alert('Delete failed: ' + (result.error || 'Unknown error'));
+          deleteBtn.textContent = 'Delete';
           deleteBtn.disabled = false;
         }
       } catch {
-        deleteBtn.textContent = '删除';
+        deleteBtn.textContent = 'Delete';
         deleteBtn.disabled = false;
       }
     });
 
-    // 单个账号刷新额度按钮
+    // Per-account refresh-quota button
     const quotaOneBtn = item.querySelector('.devin-quota-one-btn') as HTMLButtonElement;
     quotaOneBtn.addEventListener('click', async () => {
       quotaOneBtn.disabled = true;
       quotaOneBtn.textContent = '...';
       try {
-        const result = await window.duocli.devinAccountsQuotaOne(acc.email);
+        const result = await window.posse.devinAccountsQuotaOne(acc.email);
         if (result.ok) {
           quotaOneBtn.textContent = '✓';
           await refreshDevinAccounts();
@@ -3306,7 +3436,7 @@ function renderDevinAccountsList(data: { accounts: any[]; currentIndex: number }
         } else {
           quotaOneBtn.innerHTML = '&#8635;';
           quotaOneBtn.disabled = false;
-          alert('查询失败：' + (result.error || '未知错误'));
+          alert('Query failed: ' + (result.error || 'Unknown error'));
         }
       } catch {
         quotaOneBtn.innerHTML = '&#8635;';
@@ -3322,95 +3452,96 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// 刷新按钮
+// Refresh button
 devinRefreshBtn.addEventListener('click', () => refreshDevinAccounts());
 
-// 配额查询
+// Quota query
 devinQuotaBtn.addEventListener('click', async () => {
   devinQuotaBtn.disabled = true;
-  devinQuotaBtn.textContent = '查询中...';
+  devinQuotaBtn.textContent = 'Querying...';
   try {
-    const result = await window.duocli.devinAccountsQuota();
+    const result = await window.posse.devinAccountsQuota();
     if (result.ok) {
       devinQuotaBtn.textContent = `D${result.daily}% W${result.weekly}%`;
       await refreshDevinAccounts();
-      setTimeout(() => { devinQuotaBtn.textContent = '配额'; }, 5000);
+      setTimeout(() => { devinQuotaBtn.textContent = 'Quota'; }, 5000);
     } else {
-      devinQuotaBtn.textContent = '失败';
-      setTimeout(() => { devinQuotaBtn.textContent = '配额'; }, 2000);
+      devinQuotaBtn.textContent = 'Failed';
+      setTimeout(() => { devinQuotaBtn.textContent = 'Quota'; }, 2000);
     }
   } catch {
-    devinQuotaBtn.textContent = '配额';
+    devinQuotaBtn.textContent = 'Quota';
   } finally {
     devinQuotaBtn.disabled = false;
   }
 });
 
-// 刷新全部额度
+// Refresh all quotas
 devinQuotaAllBtn.addEventListener('click', async () => {
   devinQuotaAllBtn.disabled = true;
-  devinQuotaAllBtn.textContent = '刷新中...';
+  devinQuotaAllBtn.textContent = 'Refreshing...';
   try {
-    const result = await window.duocli.devinAccountsQuotaAll();
+    const result = await window.posse.devinAccountsQuotaAll();
     if (result.ok) {
       const total = result.results?.length || 0;
       const success = result.results?.filter(r => r.ok).length || 0;
-      devinQuotaAllBtn.textContent = `${success}/${total} 完成`;
+      devinQuotaAllBtn.textContent = `${success}/${total} done`;
       await refreshDevinAccounts();
-      setTimeout(() => { devinQuotaAllBtn.textContent = '刷新全部额度'; }, 4000);
+      setTimeout(() => { devinQuotaAllBtn.textContent = 'Refresh All Quotas'; }, 4000);
     } else {
-      devinQuotaAllBtn.textContent = '失败';
-      setTimeout(() => { devinQuotaAllBtn.textContent = '刷新全部额度'; }, 2000);
+      devinQuotaAllBtn.textContent = 'Failed';
+      setTimeout(() => { devinQuotaAllBtn.textContent = 'Refresh All Quotas'; }, 2000);
     }
   } catch {
-    devinQuotaAllBtn.textContent = '刷新全部额度';
+    devinQuotaAllBtn.textContent = 'Refresh All Quotas';
   } finally {
     devinQuotaAllBtn.disabled = false;
   }
 });
 
-// 添加账号
+// Add account
 devinAddBtn.addEventListener('click', async () => {
   const email = devinAddEmail.value.trim();
   const password = devinAddPassword.value.trim();
   if (!email || !password) return;
-  devinAddBtn.textContent = '添加中...';
+  devinAddBtn.textContent = 'Adding...';
   devinAddBtn.disabled = true;
   try {
-    const result = await window.duocli.devinAccountsAdd(email, password);
+    const result = await window.posse.devinAccountsAdd(email, password);
     if (result.ok) {
       devinAddEmail.value = '';
       devinAddPassword.value = '';
-      devinAddBtn.textContent = '✓ 已添加';
+      devinAddBtn.textContent = '✓ Added';
       await refreshDevinAccounts();
     } else {
-      devinAddBtn.textContent = '失败';
-      alert('添加失败：' + (result.error || '未知错误'));
+      devinAddBtn.textContent = 'Failed';
+      alert('Add failed: ' + (result.error || 'Unknown error'));
     }
   } catch {
-    devinAddBtn.textContent = '失败';
+    devinAddBtn.textContent = 'Failed';
   }
-  setTimeout(() => { devinAddBtn.textContent = '添加账号'; devinAddBtn.disabled = false; }, 1500);
+  setTimeout(() => { devinAddBtn.textContent = 'Add Account'; devinAddBtn.disabled = false; }, 1500);
 });
 
-// 批量添加账号
+// Bulk add accounts
 devinBatchBtn.addEventListener('click', async () => {
   const text = devinBatchInput.value.trim();
   if (!text) return;
-  // 基本校验：至少包含一个 @
+  // Basic validation: must contain at least one @
   if (!text.includes('@')) {
-    alert('请输入有效的账号数据（每行：邮箱 密码）');
+    alert('Please enter valid account data (one per line: email password)');
     return;
   }
-  devinBatchBtn.textContent = '导入中...';
+  devinBatchBtn.textContent = 'Importing...';
   devinBatchBtn.disabled = true;
   try {
-    const result = await window.duocli.devinAccountsAddBatch(text);
+    const result = await window.posse.devinAccountsAddBatch(text);
     if (result.ok) {
       devinBatchInput.value = '';
-      devinBatchBtn.textContent = '✓ 完成';
+      devinBatchBtn.textContent = '✓ Done';
       await refreshDevinAccounts();
-      // 显示统计信息
+      // Show summary stats
+      // NOTE: matches the CLI output prefix "已添加" produced by the backend; keep as-is
       if (result.output) {
         const statsMatch = result.output.match(/已添加\s*\d+\s*\|.*/);
         if (statsMatch) {
@@ -3418,11 +3549,11 @@ devinBatchBtn.addEventListener('click', async () => {
         }
       }
     } else {
-      devinBatchBtn.textContent = '失败';
-      alert('批量导入失败：' + (result.error || '未知错误'));
+      devinBatchBtn.textContent = 'Failed';
+      alert('Bulk import failed: ' + (result.error || 'Unknown error'));
     }
   } catch {
-    devinBatchBtn.textContent = '失败';
+    devinBatchBtn.textContent = 'Failed';
   }
-  setTimeout(() => { devinBatchBtn.textContent = '批量导入'; devinBatchBtn.disabled = false; }, 3000);
+  setTimeout(() => { devinBatchBtn.textContent = 'Bulk Import'; devinBatchBtn.disabled = false; }, 3000);
 });

@@ -1,226 +1,224 @@
-# DuoCLI 项目介绍（2026-02-17 更新）
+# Posse Project Introduction (updated 2026-02-17)
 
-> 这是项目介绍页（长期维护版）。如果你想看更故事化的版本，请看《[我花了三天，解决了"AI在等我回车，但我在马桶上"的世纪难题](./公众号文章.md)》。
+> This is the project introduction page (the long-term maintained version).
 
-## 一句话
+## In one sentence
 
-DuoCLI 是一个面向 AI 编程时代的多终端管理器：你在电脑端运行的同一个终端会话，可以在手机端实时查看和输入。
+Posse is a multi-terminal manager for the age of AI coding: the same terminal session you run on your computer can be viewed and typed into from your phone in real time.
 
-## 最新能力
+## Latest capabilities
 
-- **手机 / 电脑同会话双向同步**：不是投屏，不是新开 SSH，会话上下文不丢
-- **三色状态灯跨端同步**：忙碌、待确认、已读状态在桌面端和手机端语义一致
-- **催工模式可视化配置**：支持保存并开启、快速关闭、自动同意权限提示
-- **iOS PWA 稳定性增强**：黑屏自动自愈，后台恢复后自动重建终端并回放
-- **移动端可用性升级**：Tab 快捷键、上传后自动回填文件路径、标题可改名
+- **Two-way sync of the same session across phone and computer**: not screen mirroring, not a new SSH connection — session context is never lost
+- **Three-color status lights synced across devices**: busy, awaiting confirmation, and read states mean the same thing on desktop and mobile
+- **Visual configuration for loop mode**: save-and-start, quick stop, and auto-approve permission prompts
+- **iOS PWA stability improvements**: auto-recovery from black screens; terminals are automatically rebuilt and replayed after returning from the background
+- **Mobile usability upgrades**: Tab shortcut, auto-fill the file path after upload, and renamable titles
 
-## 适合谁
+## Who it's for
 
-- 同时跑 Claude Code / Codex / Gemini / Kimi 等多个终端会话的开发者
-- 经常离开工位，但不希望 AI 因等待确认而空转的人
-- 需要可回滚、可追溯、可归档的 AI 协作开发流程
+- Developers running multiple terminal sessions at once (Claude Code / Codex / Gemini / Kimi, etc.)
+- People who often step away from their desk but don't want the AI idling while it waits for confirmation
+- Anyone who needs an AI-assisted development workflow that can be rolled back, traced, and archived
 
-## 相关阅读
+## Related reading
 
-- [公众号文章（Markdown）](./公众号文章.md)
-- [公众号文章（HTML）](./公众号文章.html)
-- [README（完整功能与安装说明）](../README.md)
+- [README (full features and install guide)](../README.md)
 
 ---
 
-# 都说 Claude Code 厉害，但它真的太难用了（旧版长文）
+# Everyone says Claude Code is great, but it's really hard to use (legacy long read)
 
-> **DuoCLI — 多开 CLI 神器。** 我被逼得自己写了个工具。
-
----
-
-## 先吐槽
-
-2026 年了，AI 编程助手满天飞。Claude Code、Codex、Gemini CLI、Kimi、Kiro、Cursor、Antigravity……每个都说自己牛，每个都有点东西，但没有一个让我省心的。
-
-上周被这些工具搞得头大，我来挨个说说。
-
-### Cursor：好用，但又重又贵
-
-Cursor 用着确实最顺手，IDE 集成做得好，改代码体验丝滑。但是——**又重又贵**。IDE 本身就吃资源，包月费用在那摆着，长期用下来是一笔不小的开支。而且没法用自己的 API Key 和模型，只能用它给你的，想换个便宜的或者本地的？不行。
-
-### Claude Code：厉害，但真的难用
-
-都说 Claude Code 是最强的编程 AI，代码质量确实没话说。但它就是一个单独的命令行窗口啊！做大块任务挺好，一个需求扔进去哐哐写。可碎任务呢？改个样式、调个间距、换个颜色，每次都要在终端里折腾半天。
-
-而且终端里的文件路径点不开。AI 说"我改了 `src/components/Header.vue`"，你想看看改了啥——不会用 VIM，路径又点不动，只能自己去资源管理器里一层层翻目录找。**找文件翻目录，这个体验真的太原始了。**
-
-### Codex：Debug 不错，又慢又贵
-
-Codex 的 debug 能力确实可以，定位问题挺准。但是又慢又贵，等它跑完一个任务的时间够我泡杯咖啡了。
-
-### Kiro：有免费羊毛，但不方便
-
-Kiro 有免费额度，薅羊毛还行。但用起来不大方便，总觉得差点意思。
-
-### Kimi：买了包月，不用浪费
-
-Kimi 买了包月，不用白不用。但它跟其他工具之间没法联动，又是一个独立的窗口。
-
-### Antigravity：界面不错，其他不大行
-
-Antigravity 做界面还挺好看的，但除了界面之外的能力就比较一般了。
-
-### OpenCode：太笨，还不如 CLI
-
-OpenCode 想法挺好，但实际用起来太笨了，理解能力和代码质量都差一截，还不如直接用 Claude Code 的命令行。
+> **Posse — the multi-CLI power tool.** I was driven to write a tool myself.
 
 ---
 
-## 然后是终端本身的问题
+## First, a rant
 
-抛开这些 AI 工具不谈，**终端本身就有一堆让人抓狂的地方：**
+It's 2026 and AI coding assistants are everywhere. Claude Code, Codex, Gemini CLI, Kimi, Kiro, Cursor, Antigravity… they all claim to be great, they all have something going for them, but none of them makes my life easy.
 
-**多开麻烦。** 同时用 Claude、Codex、Gemini 三个 AI，就得开三个终端窗口。标签栏全是 "zsh"，切过去完全分不清谁是谁。想新开一个会话？又要重新 cd 到项目目录、重新输命令。
+Last week these tools gave me a headache, so let me go through them one by one.
 
-**配色改不了。** 想给不同任务换个颜色区分一下？做不到。三个终端窗口长得一模一样，全是黑底白字。
+### Cursor: nice, but heavy and pricey
 
-**图片粘不上。** 这个是最让人崩溃的。微信上有人发了个 bug 截图，或者你自己截了个屏想给 AI 看看——**对不起，终端不支持粘贴图片。** 你得先把图片保存成文件，再手动输入文件路径。2026 年了，Ctrl+V 粘贴个图片都做不到，这合理吗？
+Cursor really is the smoothest to use — great IDE integration, and editing code feels slick. But — **it's heavy and expensive.** The IDE itself eats resources, the monthly fee is what it is, and over the long run it adds up. And you can't use your own API key and model; you can only use what it gives you. Want to switch to something cheaper or local? No.
 
-**回滚搞不明白。** 让 AI 重构了一个模块，跑起来发现改坏了。想回退？AI 改了十几个文件，你根本记不清改之前是什么样。`git stash`？早就被后面的操作覆盖了。每次回滚都像开盲盒，不知道到底恢复到了哪个状态。
+### Claude Code: powerful, but genuinely hard to use
 
-**文件路径点不开。** AI 输出了一堆文件路径，想点开看看？不好意思，这是终端，不是浏览器。不会 VIM 的话，就只能自己去 Finder 里一层层翻。
+Everyone says Claude Code is the strongest coding AI, and the code quality really is excellent. But it's just a single command-line window! It's great for big tasks — toss in a requirement and it bangs out the work. But what about small tasks? Tweak a style, adjust some spacing, change a color — every time you have to fight with the terminal.
 
-**YOLO 模式参数记不住。** Claude 的全自动模式要加 `--dangerously-skip-permissions`，Codex 要加 `--full-auto`，Gemini 和 Kimi 要加 `--yolo`……每次都要去翻文档查参数，烦死了。
+And you can't click the file paths in the terminal. The AI says "I changed `src/components/Header.vue`" and you want to see what it changed — but you don't know VIM, the path isn't clickable, and you have to dig through directories in the file explorer yourself. **Digging through folders to find files is just too primitive.**
 
-**API Key 配了又配。** 机器上明明已经配好了 Claude 的 API Key，装了 Codex 也配了一遍，现在又来个新工具还要再配一遍……
+### Codex: decent at debugging, but slow and expensive
 
----
+Codex's debugging ability really is solid; it pinpoints problems pretty accurately. But it's slow and expensive — I can brew a cup of coffee in the time it takes to finish a task.
 
-## 被逼出来的工具
+### Kiro: free credits, but inconvenient
 
-我是个三脚猫程序员，日常就是改点东西、看看效果、不行就回退。被上面这些破事折磨了几个月之后，我决定——**自己写一个，把不爽的地方全改了。**
+Kiro has a free tier, which is fine for grabbing freebies. But it's not very convenient to use; something always feels off.
 
-这就是 DuoCLI。
+### Kimi: bought a subscription, may as well use it
 
-![DuoCLI 主界面](images/main-ui.png)
+I bought a Kimi subscription, so I may as well use it. But it can't coordinate with the other tools — it's yet another standalone window.
 
-一句话：**一个为 AI 编程时代设计的多终端管理器。** 不是又一个终端模拟器，而是专门解决「用命令行跑 AI 编程助手」这个场景下的所有痛点。
+### Antigravity: nice UI, the rest not so much
 
-核心就五个字：**一键搞定一切。**
+Antigravity's interface looks pretty good, but beyond the UI its capabilities are fairly average.
 
----
+### OpenCode: too clumsy, worse than the CLI
 
-## 它解决了什么
-
-### 一键多开 — 告别窗口地狱
-
-一个窗口管理所有 AI 终端。选好工作目录、选个预设命令、选个配色，点「+ 新建终端」——Claude、Codex、Gemini、Kimi，想开几个开几个，全在一个界面里。
-
-每个终端会根据内容**自动生成中文标题**，比如「Claude:重构登录模块」「Codex:添加单元测试」。不用再对着一排 "zsh" 猜了。
-
-- 内置 6 套配色（VS Code Dark / Monokai / Dracula / Solarized Dark / One Dark / Nord），不同任务不同颜色，一眼区分
-- 暂时不用的终端可以「归档」，进程不会被杀掉，随时恢复
-- 零配置复用本机已有的 API Key，不用重复配置
-
-### 一键 YOLO — 全自动模式，不用记参数
-
-Claude 的全自动要加 `--dangerously-skip-permissions`（谁记得住这么长的参数？），Codex 要加 `--full-auto`，Gemini 和 Kimi 要加 `--yolo`……
-
-在 DuoCLI 里，下拉菜单直接选就行：
-
-![全自动模式选择](images/yolo-mode.png)
-
-每个 AI 工具都有「普通」和「全自动」两个选项。选「Claude (全自动)」，参数自动帮你加好，一键起飞。再也不用翻文档查参数了。
-
-### 一键贴图 — 终端也能粘贴截图了
-
-**这个功能我觉得是最实用的。**
-
-用终端跑 AI 编程助手，最痛苦的事情之一就是：**没法粘贴图片。** 微信上同事发了个 bug 截图，你想让 AI 看看——不好意思，终端不支持。你得先把图片保存成文件，找个地方存好，再手动输入文件路径给 AI。
-
-DuoCLI 直接解决了这个问题。**Ctrl+V / Cmd+V，直接粘贴。** 从微信复制的截图、系统截屏、浏览器里复制的图片——粘贴进去就行，DuoCLI 会自动保存成临时文件并把路径发给终端。
-
-2026 年了，粘贴个图片本来就不应该这么费劲。
-
-### 一键回滚 — 时间机器，改坏了不怕
-
-这是我最喜欢的功能。
-
-AI 每次修改代码前，DuoCLI 会**自动创建 Git 快照**。你可以：
-
-- 查看每个快照改了哪些文件
-- 展开看每个文件的 diff（带颜色高亮）
-- **逐文件恢复**——只回滚某一个文件
-- **撤销本次变更**——回滚这次快照记录的所有变更文件
-- **还原到此时刻**——直接把整个项目恢复到某个快照时的完整状态（时间机器）
-
-![快照与 Diff 查看](images/snapshot.png)
-
-已撤销/已还原的快照会显示删除线标记，一眼就能看出哪些历史已经回滚过。
-
-快照存在一个独立的 Git 孤儿分支上（`_duocli_snapshots`），**完全不会污染你的项目提交历史**。三脚猫程序员的救命稻草。
-
-### 一键点链接 — 文件路径直接点开
-
-终端输出中的文件路径会自动变成**可点击的链接**。
-
-不管是绝对路径 `/Users/xxx/src/App.vue`，还是相对路径 `pages/index/index.vue`，甚至 `@/components/Header.vue` 这种别名路径——点击就能直接用编辑器打开。
-
-再也不用去 Finder 里翻目录了。右键点击还能切换默认编辑器。
-
-### 零配置 — API Key 自动发现
-
-DuoCLI 会自动扫描你机器上已有的 AI 工具配置：
-
-![AI 配置面板](images/ai-config.png)
-
-`~/.claude`、`~/.codex`、`~/.gemini`、环境变量里的 API Key……全部自动发现，不用重复配置。
-
-点一下「扫描并测试」，自动检测并验证，选一个能用的就行。
+OpenCode's idea is good, but in practice it's too clumsy — its comprehension and code quality both fall short, worse than just using Claude Code's command line directly.
 
 ---
 
-## 怎么用
+## Then there's the terminal itself
 
-### 直接下载
+Setting these AI tools aside, **the terminal itself has a pile of maddening issues:**
 
-前往 [Releases](https://github.com/saddism/DuoCLI/releases) 下载安装包：
+**Multitasking is a pain.** Using Claude, Codex, and Gemini at once means opening three terminal windows. The tab bar is all "zsh" and you can't tell which is which when you switch. Want a new session? You have to cd into the project directory and type the command all over again.
 
-- **macOS** — `.dmg` 文件，打开后拖入 Applications。首次打开如提示"无法验证开发者"，右键点击应用 → 打开即可
-- **Windows** — `.exe` 安装包，双击安装。如弹出 SmartScreen 警告，点击"更多信息" → "仍要运行"
+**Colors can't be changed.** Want to color-code different tasks? Can't be done. The three terminal windows look identical — all white text on black.
 
-### 从源码构建
+**Images can't be pasted.** This one is the most infuriating. Someone sends you a bug screenshot on WeChat, or you take a screenshot yourself and want to show the AI — **sorry, the terminal doesn't support pasting images.** You have to save the image to a file first, then manually type the file path. It's 2026 and you can't even Ctrl+V an image — is that reasonable?
+
+**Rollback is a mystery.** You had the AI refactor a module, ran it, and found it broke. Want to revert? The AI changed a dozen files and you can't remember what they looked like before. `git stash`? That got overwritten by later operations long ago. Every rollback is like opening a blind box — you have no idea which state you ended up restoring to.
+
+**File paths can't be clicked.** The AI prints a bunch of file paths and you want to open one? Sorry, this is a terminal, not a browser. If you don't know VIM, you have to dig through Finder layer by layer yourself.
+
+**YOLO-mode flags are impossible to remember.** Claude's full-auto mode needs `--dangerously-skip-permissions`, Codex needs `--full-auto`, Gemini and Kimi need `--yolo`… every time you have to dig through the docs to look up the flags. Exhausting.
+
+**Configuring API keys over and over.** You've already set up Claude's API key on the machine, then you install Codex and set it up again, and now a new tool comes along and you have to set it up yet again…
+
+---
+
+## A tool born out of frustration
+
+I'm a so-so programmer; my daily routine is to tweak something, check the result, and roll back if it doesn't work. After months of being tormented by the stuff above, I decided — **I'll write my own and fix everything that bugs me.**
+
+That's Posse.
+
+![Posse main UI](images/main-ui.png)
+
+In one sentence: **a multi-terminal manager designed for the age of AI coding.** Not just another terminal emulator, but something purpose-built to solve all the pain points of "running AI coding assistants from the command line."
+
+The core idea is simple: **handle everything with one click.**
+
+---
+
+## What it solves
+
+### One-click multitasking — goodbye, window hell
+
+One window manages all your AI terminals. Pick a working directory, a preset command, and a color scheme, then click "+ New Terminal" — Claude, Codex, Gemini, Kimi, as many as you want, all in one interface.
+
+Each terminal **auto-generates a title** based on its content, like "Claude: refactor login module" or "Codex: add unit tests." No more guessing at a row of "zsh."
+
+- 6 built-in color schemes (VS Code Dark / Monokai / Dracula / Solarized Dark / One Dark / Nord) — different colors for different tasks, distinguishable at a glance
+- Terminals you're not using can be "archived"; the process isn't killed and can be restored anytime
+- Zero-config reuse of the API keys already on your machine — no need to configure them again
+
+### One-click YOLO — full-auto mode without memorizing flags
+
+Claude's full-auto needs `--dangerously-skip-permissions` (who can remember a flag that long?), Codex needs `--full-auto`, Gemini and Kimi need `--yolo`…
+
+In Posse, just pick from the dropdown:
+
+![Full-auto mode selection](images/yolo-mode.png)
+
+Every AI tool has a "normal" and a "full-auto" option. Pick "Claude (auto)" and the flags are added for you — one click and you're off. No more digging through docs for flags.
+
+### One-click image paste — you can paste screenshots into the terminal now
+
+**I think this feature is the most practical.**
+
+One of the most painful things about running AI coding assistants in a terminal is: **you can't paste images.** A coworker sends a bug screenshot on WeChat and you want the AI to look at it — sorry, the terminal doesn't support it. You have to save the image to a file first, find a place to store it, then manually type the file path for the AI.
+
+Posse solves this directly. **Ctrl+V / Cmd+V, paste it straight in.** A screenshot copied from WeChat, a system screen capture, an image copied from the browser — just paste it in, and Posse automatically saves it to a temp file and sends the path to the terminal.
+
+It's 2026 — pasting an image shouldn't be this much trouble.
+
+### One-click rollback — a time machine, so breaking things isn't scary
+
+This is my favorite feature.
+
+Before each AI code change, Posse **automatically creates a Git snapshot.** You can:
+
+- See which files each snapshot changed
+- Expand the diff of each file (with color highlighting)
+- **Restore file by file** — roll back just one file
+- **Undo this change** — roll back all files recorded in this snapshot
+- **Restore to this moment** — restore the entire project to its full state at a given snapshot (the time machine)
+
+![Snapshots and diff view](images/snapshot.png)
+
+Undone/restored snapshots are shown with strikethrough, so you can tell at a glance which history has already been rolled back.
+
+Snapshots live on a separate Git orphan branch (`_posse_snapshots`), so they **never pollute your project's commit history.** A lifesaver for a so-so programmer.
+
+### One-click links — open file paths directly
+
+File paths in terminal output automatically become **clickable links.**
+
+Whether it's an absolute path `/Users/xxx/src/App.vue`, a relative path `pages/index/index.vue`, or even an alias path like `@/components/Header.vue` — click it to open it directly in your editor.
+
+No more digging through Finder. Right-click to switch the default editor.
+
+### Zero config — API key auto-discovery
+
+Posse automatically scans for AI tool configs already on your machine:
+
+![AI config panel](images/ai-config.png)
+
+`~/.claude`, `~/.codex`, `~/.gemini`, API keys in environment variables… all auto-discovered, no need to configure them again.
+
+Click "Scan and Test" to auto-detect and verify, then pick one that works.
+
+---
+
+## How to use it
+
+### Download directly
+
+Go to [Releases](https://github.com/saddism/Posse/releases) to download an installer:
+
+- **macOS** — a `.dmg` file; open it and drag into Applications. If you see "cannot verify developer" on first launch, right-click the app → Open
+- **Windows** — an `.exe` installer; double-click to install. If SmartScreen warns you, click "More info" → "Run anyway"
+
+### Build from source
 
 ```bash
-git clone https://github.com/saddism/DuoCLI.git
-cd DuoCLI
+git clone https://github.com/saddism/Posse.git
+cd Posse
 npm install
 npm run rebuild
 npm start
 ```
 
-启动后：
-1. 选择工作目录
-2. 选预设命令（Claude / Codex / Gemini / Kimi / 空白终端，带"全自动"后缀的选项自动附加参数）
-3. 选配色
-4. 点「+ 新建终端」
+After launching:
+1. Choose a working directory
+2. Choose a preset command (Claude / Codex / Gemini / Kimi / empty terminal; options with the "auto" suffix append the flags automatically)
+3. Choose a color scheme
+4. Click "+ New Terminal"
 
-就这么简单。
+That simple.
 
 ---
 
-## 技术栈
+## Tech stack
 
 Electron + node-pty + xterm.js + TypeScript + esbuild
 
-整个项目结构很清晰，欢迎 PR。
+The project structure is clean — PRs welcome.
 
 ---
 
-## 最后
+## Finally
 
-这个工具就是被各种不爽逼出来的。
+This tool was forced into existence by all sorts of frustrations.
 
-都说 Claude Code 厉害，我也觉得厉害。但厉害归厉害，难用归难用。既然没人解决这些痛点，那就自己动手。
+Everyone says Claude Code is great, and I think so too. But great is great, and hard-to-use is hard-to-use. Since no one was solving these pain points, I did it myself.
 
-如果你也在同时用多个 AI 编程工具，或者被终端的各种反人类体验折磨过，试试 DuoCLI。
+If you also use multiple AI coding tools at once, or have been tormented by the terminal's various user-hostile experiences, give Posse a try.
 
-**GitHub:** https://github.com/saddism/DuoCLI
+**GitHub:** https://github.com/saddism/Posse
 
-觉得有用的话，给个 Star 吧。反正不要钱。
+If you find it useful, give it a Star. It's free anyway.

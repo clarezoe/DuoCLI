@@ -117,8 +117,8 @@ function requestOllamaTitle(config: TitleAIConfig, prompt: string): Promise<stri
 }
 
 /**
- * 拼接 baseUrl 和 endpoint，避免重复路径段。
- * 例如 baseUrl='https://x/v1' + endpoint='/v1/messages' → '/v1/messages'。
+ * Join baseUrl and endpoint, avoiding duplicated path segments.
+ * e.g. baseUrl='https://x/v1' + endpoint='/v1/messages' -> '/v1/messages'.
  */
 function joinPath(basePath: string, endpoint: string): string {
   const base = basePath.replace(/\/$/, '');
@@ -129,7 +129,7 @@ function joinPath(basePath: string, endpoint: string): string {
   const [epPathRaw, epQuery = ''] = ep.split('?');
   const epSegs = epPathRaw.split('/').filter(Boolean);
 
-  // 找最大重叠：base 末尾若干段 == endpoint 开头若干段
+  // Find the largest overlap: trailing segments of base == leading segments of endpoint
   let overlap = 0;
   const max = Math.min(baseSegs.length, epSegs.length);
   for (let n = max; n >= 1; n--) {

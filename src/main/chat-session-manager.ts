@@ -47,14 +47,14 @@ export class ChatSessionManager extends EventEmitter {
     super();
     this.events = events;
     this.getTitleAIConfig = getTitleAIConfig;
-    // 桥接：emit 事件时同步调用回调
+    // Bridge: invoke callbacks synchronously when events are emitted
     this.on('onDelta', (sessionId: string, text: string) => events.onDelta(sessionId, text));
     this.on('onDone', (sessionId: string, content: string) => events.onDone(sessionId, content));
     this.on('onError', (sessionId: string, error: string) => events.onError(sessionId, error));
     this.on('onTitleUpdate', (sessionId: string, title: string) => events.onTitleUpdate(sessionId, title));
   }
 
-  /** 检查 Windsurf 代理是否可用 */
+  /** Check whether the Windsurf proxy is available */
   async healthCheck(): Promise<{ ok: boolean; error?: string }> {
     return new Promise((resolve) => {
       const req = http.request({
@@ -81,7 +81,7 @@ export class ChatSessionManager extends EventEmitter {
     });
   }
 
-  /** 获取可用模型列表 */
+  /** Get the list of available models */
   async listModels(): Promise<Array<{ id: string; credits: string }>> {
     return new Promise((resolve) => {
       const req = http.request({
@@ -108,7 +108,7 @@ export class ChatSessionManager extends EventEmitter {
     });
   }
 
-  /** 创建 Chat 会话 */
+  /** Create a chat session */
   create(workspace: string, model?: string): ChatSession {
     const id = `chat-${this.nextId++}`;
     const session: ChatSession = {
@@ -125,13 +125,13 @@ export class ChatSessionManager extends EventEmitter {
     };
     this.sessions.set(id, session);
 
-    // 异步在 Windsurf 代理中创建会话
+    // Asynchronously create the session in the Windsurf proxy
     this.createProxySession(session).catch(() => {});
 
     return session;
   }
 
-  /** 恢复已关闭的 Chat 会话：创建新会话并预载历史消息 */
+  /** Restore a closed chat session: create a new session and preload its message history */
   restore(workspace: string, model: string, messages: ChatMessage[], title?: string): ChatSession {
     const id = `chat-${this.nextId++}`;
     const session: ChatSession = {
@@ -148,7 +148,7 @@ export class ChatSessionManager extends EventEmitter {
     };
     this.sessions.set(id, session);
 
-    // 异步在 Windsurf 代理中创建会话
+    // Asynchronously create the session in the Windsurf proxy
     this.createProxySession(session).catch(() => {});
 
     return session;
@@ -157,7 +157,7 @@ export class ChatSessionManager extends EventEmitter {
   private async createProxySession(session: ChatSession): Promise<void> {
     const payload = JSON.stringify({
       model: session.model,
-      title: session.title || '新对话',
+      title: session.title || 'New conversation',
       workspace: session.workspace,
     });
 
@@ -189,26 +189,26 @@ export class ChatSessionManager extends EventEmitter {
     });
   }
 
-  /** 发送消息到 Chat 会话 */
+  /** Send a message to the chat session */
   async sendMessage(sessionId: string, content: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error('Session not found');
 
-    // 检查自定义命令
+    // Check for custom commands
     if (content.startsWith('/')) {
       await this.handleCustomCommand(session, content);
       return;
     }
 
-    // 添加用户消息
+    // Add the user message
     session.messages.push({ role: 'user', content, timestamp: Date.now() });
 
-    // 如果还没有代理会话，先创建
+    // If there is no proxy session yet, create one first
     if (!session.proxySessionId) {
       await this.createProxySession(session);
     }
 
-    // 发送到 Windsurf 代理
+    // Send to the Windsurf proxy
     await this.sendToProxy(session, content);
   }
 
@@ -270,8 +270,8 @@ export class ChatSessionManager extends EventEmitter {
         };
 
         res.on('data', (chunk: Buffer) => {
-          // 跨 chunk 缓冲：单个 SSE event 可能被切到两次 data 里，
-          // 直接 split 会让后半截 JSON 进 try/catch 被吞 → token 丢字
+          // Cross-chunk buffering: a single SSE event may be split across two data chunks;
+          // splitting directly would push the latter half of the JSON into try/catch and swallow it -> dropped tokens
           buffer += chunk.toString('utf8');
           const lines = buffer.split(/\r?\n/);
           buffer = lines.pop() || '';
@@ -295,7 +295,7 @@ export class ChatSessionManager extends EventEmitter {
 
         res.on('end', () => {
           this.activeStreams.delete(session.id);
-          // 如果上游没发 done，用累积文本兜底
+          // If upstream never sent done, fall back to the accumulated text
           finalize(fullText);
           resolve();
         });
@@ -310,7 +310,7 @@ export class ChatSessionManager extends EventEmitter {
       req.on('timeout', () => {
         this.activeStreams.delete(session.id);
         req.destroy();
-        this.emit('onError', session.id, '请求超时');
+        this.emit('onError', session.id, 'Request timed out');
         reject(new Error('Timeout'));
       });
 
@@ -396,7 +396,7 @@ export class ChatSessionManager extends EventEmitter {
       req.on('timeout', () => {
         this.activeStreams.delete(session.id);
         req.destroy();
-        this.emit('onError', session.id, '请求超时');
+        this.emit('onError', session.id, 'Request timed out');
         reject(new Error('Timeout'));
       });
 
@@ -406,7 +406,7 @@ export class ChatSessionManager extends EventEmitter {
     });
   }
 
-  /** 停止活跃的流 */
+  /** Stop the active stream */
   abortStream(sessionId: string): void {
     const req = this.activeStreams.get(sessionId);
     if (req) {
@@ -415,7 +415,7 @@ export class ChatSessionManager extends EventEmitter {
     }
   }
 
-  // ========== 自定义命令 ==========
+  // ========== Custom commands ==========
 
   private async handleCustomCommand(session: ChatSession, command: string): Promise<void> {
     const parts = command.split(/\s+/);
@@ -438,14 +438,14 @@ export class ChatSessionManager extends EventEmitter {
         this.cmdClear(session);
         break;
       default:
-        // 未知命令，发送给 AI
+        // Unknown command; send it to the AI
         session.messages.push({ role: 'user', content: command, timestamp: Date.now() });
         await this.sendToProxy(session, command);
         break;
     }
   }
 
-  /** /auto-login - 通过代理服务器 API 切换到下一个账号 */
+  /** /auto-login - switch to the next account via the proxy server API */
   private async cmdAutoLogin(session: ChatSession): Promise<void> {
     const resultMsg: ChatMessage = {
       role: 'system',
@@ -454,26 +454,26 @@ export class ChatSessionManager extends EventEmitter {
     };
 
     try {
-      // 先检查代理服务器是否在运行
+      // First check whether the proxy server is running
       const health = await this.healthCheck();
       if (!health.ok) {
-        resultMsg.content = '❌ Windsurf 代理服务器未运行，无法切号';
+        resultMsg.content = '❌ Windsurf proxy server is not running; cannot switch accounts';
         session.messages.push(resultMsg);
         this.emit('onDone', session.id, resultMsg.content);
         return;
       }
 
-      // 调用代理服务器的 rotate-account API，让服务器内部正确地切换账号
+      // Call the proxy server's rotate-account API so the server switches accounts correctly internally
       const rotateResult = await this.callProxyApi('/api/admin/rotate-account', 'POST');
 
       if (!rotateResult.ok) {
-        resultMsg.content = `❌ 切号失败: ${rotateResult.error || rotateResult.message || '未知错误'}`;
+        resultMsg.content = `❌ Account switch failed: ${rotateResult.error || rotateResult.message || 'Unknown error'}`;
         session.messages.push(resultMsg);
         this.emit('onDone', session.id, resultMsg.content);
         return;
       }
 
-      // 同步更新插件账号状态文件
+      // Sync the plugin account-state file
       try {
         const accountsPath = path.join(
           os.homedir(), 'Documents', 'myDev', 'windsurf反代', 'server', 'windsurf-accounts.txt'
@@ -503,16 +503,16 @@ export class ChatSessionManager extends EventEmitter {
       const currentAcc = accounts.find((a: any) => a.index === (idx as number) - 1);
       const email = currentAcc?.email || '?';
 
-      resultMsg.content = `✅ 已切换到账号 #${idx}/${total} (${email})\n代理服务器账号池已更新，后续请求将使用新账号`;
+      resultMsg.content = `✅ Switched to account #${idx}/${total} (${email})\nThe proxy server account pool has been updated; subsequent requests will use the new account`;
     } catch (err: any) {
-      resultMsg.content = `❌ 切号失败: ${err.message}`;
+      resultMsg.content = `❌ Account switch failed: ${err.message}`;
     }
 
     session.messages.push(resultMsg);
     this.emit('onDone', session.id, resultMsg.content);
   }
 
-  /** 调用 Windsurf 代理服务器 API */
+  /** Call the Windsurf proxy server API */
   private callProxyApi(path: string, method: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const payload = method === 'POST' ? '{}' : undefined;
@@ -544,58 +544,58 @@ export class ChatSessionManager extends EventEmitter {
     });
   }
 
-  /** /switch - 切换到指定账号 */
+  /** /switch - switch to a specific account */
   private async cmdSwitchAccount(session: ChatSession): Promise<void> {
     const resultMsg: ChatMessage = {
       role: 'system',
-      content: '请使用 /auto-login 自动切换到下一个可用账号',
+      content: 'Use /auto-login to automatically switch to the next available account',
       timestamp: Date.now(),
     };
     session.messages.push(resultMsg);
     this.emit('onDone',session.id, resultMsg.content);
   }
 
-  /** /models - 列出可用模型 */
+  /** /models - list available models */
   private async cmdListModels(session: ChatSession): Promise<void> {
     const models = await this.listModels();
     const resultMsg: ChatMessage = {
       role: 'system',
       content: models.length > 0
-        ? '可用模型:\n' + models.map(m => `  • ${m.id} (${m.credits})`).join('\n')
-        : '❌ 无法获取模型列表，请检查 Windsurf 是否运行',
+        ? 'Available models:\n' + models.map(m => `  • ${m.id} (${m.credits})`).join('\n')
+        : '❌ Unable to fetch the model list; check whether Windsurf is running',
       timestamp: Date.now(),
     };
     session.messages.push(resultMsg);
     this.emit('onDone',session.id, resultMsg.content);
   }
 
-  /** /health - 健康检查 */
+  /** /health - health check */
   private async cmdHealthCheck(session: ChatSession): Promise<void> {
     const health = await this.healthCheck();
     const resultMsg: ChatMessage = {
       role: 'system',
       content: health.ok
-        ? '✅ Windsurf 代理运行正常'
-        : `❌ Windsurf 代理不可用: ${health.error || '未知错误'}`,
+        ? '✅ Windsurf proxy is running normally'
+        : `❌ Windsurf proxy is unavailable: ${health.error || 'Unknown error'}`,
       timestamp: Date.now(),
     };
     session.messages.push(resultMsg);
     this.emit('onDone',session.id, resultMsg.content);
   }
 
-  /** /clear - 清空对话历史 */
+  /** /clear - clear conversation history */
   private cmdClear(session: ChatSession): void {
     session.messages = [];
     const resultMsg: ChatMessage = {
       role: 'system',
-      content: '✅ 对话历史已清空',
+      content: '✅ Conversation history cleared',
       timestamp: Date.now(),
     };
     session.messages.push(resultMsg);
     this.emit('onDone',session.id, resultMsg.content);
   }
 
-  // ========== 管理方法 ==========
+  // ========== Management methods ==========
 
   getSession(id: string): ChatSession | undefined {
     return this.sessions.get(id);
@@ -614,20 +614,20 @@ export class ChatSessionManager extends EventEmitter {
     this.generateTitle(session).catch(() => {});
   }
 
-  /** 让 AI 根据累积对话历史生成标题（第 2-5 轮持续更新） */
+  /** Have the AI generate a title from the accumulated conversation history (kept updating across rounds 2-5) */
   private async generateTitle(session: ChatSession): Promise<void> {
     session.titleGenerationInFlight = true;
     console.log('[Chat Title] Generating title for session:', session.id,
       'with', session.messages.length, 'messages');
 
     try {
-      // 只用用户发送的消息来起标题（每条截断到 200 字，避免 token 爆炸）
+      // Use only user messages to build the title (truncate each to 200 chars to avoid token blowup)
       const history = session.messages
         .filter(m => m.role === 'user')
         .map(m => m.content.slice(0, 200))
         .join('\n');
 
-      const prompt = `请为以下对话生成一个简短标题（不超过15个字，直接输出标题，不要加引号或任何解释）：\n\n${history}`;
+      const prompt = `Generate a short title for the following conversation (no more than 15 characters; output the title directly, without quotes or any explanation):\n\n${history}`;
 
       const title = await this.requestTitleFromAI(session.model, prompt);
       if (title) {
@@ -659,7 +659,7 @@ export class ChatSessionManager extends EventEmitter {
     }
   }
 
-  /** 通过 /v1/chat/completions 发一个轻量请求让 AI 起标题 */
+  /** Send a lightweight /v1/chat/completions request to have the AI generate a title */
   private requestTitleFromAI(model: string, prompt: string): Promise<string> {
     const config = this.getTitleAIConfig?.();
     console.log('[Chat Title] AI config available:', !!config);
@@ -687,7 +687,7 @@ export class ChatSessionManager extends EventEmitter {
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
-          'Authorization': 'Bearer duocli',
+          'Authorization': 'Bearer posse',
         },
         timeout: 15000,
       }, (res) => {

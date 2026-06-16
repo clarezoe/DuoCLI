@@ -81,6 +81,24 @@ Redesign the **desktop main renderer** (`src/renderer/`) session+terminal worksp
 * [`research/file-preview-and-grouping.md`](research/file-preview-and-grouping.md) — CodeMirror 6 for read-only preview; flat-list + collapsible group headers + 3-state status pill for grouping.
 * [`../archive/2026-06/06-15-terminal-client-separation/research/warp-ui-architecture.md`](../../archive/2026-06/06-15-terminal-client-separation/research/warp-ui-architecture.md) — Warp patterns to adapt.
 
+## Added Requirement (clarified after first build) — Native agent session history per folder
+
+The user's core need: when a directory is opened, see THAT agent's own existing
+conversations stored on disk for that folder (not just DuoCLI-tracked PTY sessions),
+and one-click resume them. Start with Claude Code.
+
+* Claude Code stores sessions at `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`.
+  Encoding: replace every non-alphanumeric char in the absolute cwd with `-`
+  (e.g. `/Users/clarezoe/My Apps/DuoCLI` → `-Users-clarezoe-My-Apps-DuoCLI`).
+* Each `.jsonl` is one conversation. Title = last `{"type":"ai-title","aiTitle":...}`
+  line; fallback = first `type:"user"` message text with `<command-*>` tags stripped, truncated.
+* Requirement: in the session rail, show a collapsible section for the OPENED directory
+  (file-tree root cwd) listing its Claude history sessions (title + relative time),
+  each with one-click **resume** → `createPty(cwd, "claude --resume <uuid>", themeId)`.
+* Refresh when the file-tree root cwd changes + a manual refresh control.
+* Cap ~40 newest by mtime; guard title parsing on very large files.
+* Extensible later to other agents (codex etc.); MVP = Claude only.
+
 ## Reuse Map (already in codebase — confirmed via investigation)
 
 * Closed-session persistence EXISTS: `ClosedSession` + `closed-sessions.json` + `addClosedSession()` (stores `resumeId`/`resumeCommand`) + IPC `closed-sessions:list/remove/clear/update`. (`src/main/index.ts:63-105,769-777`)

@@ -1,179 +1,179 @@
-# DuoCLI 固定服务控制台设计
+# DuoCLI Fixed Service Console Design
 
-日期：2026-04-13
+Date: 2026-04-13
 
-## 目标
+## Goal
 
-在 DuoCLI 桌面端新增一个固定的“服务控制台”页面，统一管理与 DuoCLI 配套的三个服务：
+Add a fixed "Service Console" page to the DuoCLI desktop app to manage the three services that ship with DuoCLI in one place:
 
 1. `cc-connect`
 2. `FRP`
-3. DuoCLI 手机远程服务
+3. The DuoCLI mobile remote service
 
-其中 `cc-connect` 需要支持配置飞书 `app_id` 和 `app_secret`，并在保存后自动重启生效。
+`cc-connect` needs to support configuring the Feishu `app_id` and `app_secret`, and automatically restart to apply the changes after saving.
 
-## 非目标
+## Non-goals
 
-- 不做“任意脚本面板”或通用脚本执行器。
-- 不提供“启动 DuoCLI.app”按钮。应用已经运行时再启动自身没有实际价值。
-- 不把服务控制入口混进现有 `AI` 配置页，避免语义污染。
-- 不改造成独立系统设置窗口，仍保持在主界面右侧边栏内完成操作。
+- No "arbitrary script panel" or general-purpose script runner.
+- No "Launch DuoCLI.app" button. Launching the app again while it's already running has no real value.
+- Don't mix the service-control entry into the existing `AI` config page, to avoid semantic pollution.
+- Don't turn it into a standalone system-settings window; keep all operations within the main UI's right sidebar.
 
-## 用户体验
+## User experience
 
-右侧边栏新增一个 `服务` tab，放在 `会话 / 历史 / AI` 同级。
+Add a `Services` tab to the right sidebar, at the same level as `Sessions / History / AI`.
 
-页面包含 3 个固定卡片：
+The page contains 3 fixed cards:
 
-### 1. cc-connect 卡片
+### 1. cc-connect card
 
-展示内容：
+Displayed content:
 
-- 当前状态：未安装 / 运行中 / 已停止 / 异常
-- 配置文件路径
-- 飞书 `app_id`
-- 飞书 `app_secret`
+- Current status: not installed / running / stopped / error
+- Config file path
+- Feishu `app_id`
+- Feishu `app_secret`
 
-操作按钮：
+Action buttons:
 
-- `启动`
-- `停止`
-- `重启`
-- `保存并重启`
+- `Start`
+- `Stop`
+- `Restart`
+- `Save and Restart`
 
-交互约束：
+Interaction constraints:
 
-- 页面加载时读取当前 `cc-connect/config.toml` 中的飞书配置并回填。
-- `app_secret` 默认使用密码输入框。
-- 点击“保存并重启”时先校验两个字段都非空，再写回配置文件。
-- 保存成功后自动重启 `cc-connect`，并刷新状态。
+- On page load, read and pre-fill the Feishu config from the current `cc-connect/config.toml`.
+- `app_secret` uses a password input by default.
+- On "Save and Restart," validate that both fields are non-empty before writing back to the config file.
+- After a successful save, automatically restart `cc-connect` and refresh the status.
 
-### 2. FRP 卡片
+### 2. FRP card
 
-展示内容：
+Displayed content:
 
-- 当前状态：运行中 / 已停止 / 异常
-- 配置路径 `frp/frpc.toml`
-- 说明“用于将本地 9800 暴露到外网”
+- Current status: running / stopped / error
+- Config path `frp/frpc.toml`
+- A note: "Used to expose local port 9800 to the public internet"
 
-操作按钮：
+Action buttons:
 
-- `启动`
-- `停止`
-- `重启`
+- `Start`
+- `Stop`
+- `Restart`
 
-交互约束：
+Interaction constraints:
 
-- 启动和停止通过仓库内现有脚本执行：
+- Start and stop run via the existing scripts in the repo:
   - `frp/start-frp.sh`
   - `frp/stop-frp.sh`
-- 状态通过进程探测判断，不依赖脚本输出文案。
-- 如果 9800 服务未启动，沿用现有脚本行为，由主进程把失败信息返回给界面。
+- Status is determined by process probing, not by parsing script output text.
+- If the 9800 service isn't running, keep the existing script behavior and let the main process return the failure info to the UI.
 
-### 3. 手机远程服务卡片
+### 3. Mobile remote service card
 
-展示内容：
+Displayed content:
 
-- 当前状态：运行中 / 已停止 / 异常
-- 当前端口，默认 `9800`
-- 当前局域网访问地址
+- Current status: running / stopped / error
+- Current port, default `9800`
+- Current LAN access address
 
-操作按钮：
+Action buttons:
 
-- `重启`
+- `Restart`
 
-交互约束：
+Interaction constraints:
 
-- 当前仓库里的手机远程服务由主进程启动，服务控制台主要承担状态展示和重启能力。
-- 不增加“关闭”按钮，避免误关后导致桌面端核心能力失效。
+- The mobile remote service in the current repo is started by the main process; the service console mainly handles status display and restart.
+- No "Stop" button, to avoid accidentally disabling a core desktop capability.
 
-## 技术设计
+## Technical design
 
-## 1. 渲染层
+## 1. Renderer layer
 
-涉及文件：
+Files involved:
 
 - `src/renderer/index.html`
 - `src/renderer/app.ts`
 - `src/renderer/styles.css`
 
-改动点：
+Changes:
 
-- 新增 `服务` tab 和对应内容容器。
-- 新增 3 个服务卡片的表单和按钮。
-- 新增一个统一的状态刷新函数，在切换到 `服务` tab 时主动拉取最新状态。
-- 所有按钮操作都通过 preload 暴露的 IPC API 调用主进程，不直接执行系统命令。
+- Add a `Services` tab and its content container.
+- Add the forms and buttons for the 3 service cards.
+- Add a unified status-refresh function that actively fetches the latest status when switching to the `Services` tab.
+- All button actions call the main process via the IPC API exposed by preload; never run system commands directly.
 
 ## 2. Preload
 
-涉及文件：
+Files involved:
 
 - `src/preload/index.ts`
 
-新增 API：
+New APIs:
 
 - `serviceConsoleGetState()`
 - `serviceConsoleControl(service: string, action: string)`
 - `ccConnectGetConfig()`
 - `ccConnectSaveConfig(config)`
 
-原则：
+Principles:
 
-- renderer 不直接接触文件系统和子进程。
-- 所有返回值都保持明确结构，避免 renderer 猜测异常字符串。
+- The renderer never touches the file system or subprocesses directly.
+- All return values keep a clear structure, so the renderer doesn't have to guess at error strings.
 
-## 3. 主进程
+## 3. Main process
 
-涉及文件：
+Files involved:
 
 - `src/main/index.ts`
 - `src/main/cc-connect-manager.ts`
-- 可选新增 `src/main/service-console.ts`
+- Optionally a new `src/main/service-console.ts`
 
 ### 3.1 cc-connect
 
-在 `CcConnectManager` 中补充能力：
+Extend `CcConnectManager` with:
 
-- 读取 `cc-connect/config.toml` 中的飞书配置
-- 更新 `app_id` / `app_secret`
-- 提供启动 / 停止 / 重启 / 状态接口
+- Reading the Feishu config from `cc-connect/config.toml`
+- Updating `app_id` / `app_secret`
+- Providing start / stop / restart / status interfaces
 
-实现约束：
+Implementation constraints:
 
-- 先读取原文件，再做最小文本替换，不重写整个 TOML 结构。
-- 仅更新 `[[projects.platforms]]` 下 `type = "feishu"` 对应的 `[projects.platforms.options]` 段。
-- 如果飞书配置段不存在，则报错，不在本次需求里做 TOML 结构自动修复。
+- Read the original file first, then do a minimal text replacement; don't rewrite the whole TOML structure.
+- Only update the `[projects.platforms.options]` section corresponding to `type = "feishu"` under `[[projects.platforms]]`.
+- If the Feishu config section doesn't exist, raise an error; automatic TOML-structure repair is out of scope for this requirement.
 
 ### 3.2 FRP
 
-主进程增加固定控制逻辑：
+Add fixed control logic to the main process:
 
-- 启动：执行 `frp/start-frp.sh`
-- 停止：执行 `frp/stop-frp.sh`
-- 重启：先停再启
-- 状态：通过 `pgrep -f "frpc.*frpc.toml"` 判断
+- Start: run `frp/start-frp.sh`
+- Stop: run `frp/stop-frp.sh`
+- Restart: stop, then start
+- Status: determined via `pgrep -f "frpc.*frpc.toml"`
 
-实现约束：
+Implementation constraints:
 
-- 启动脚本需使用非阻塞方式执行，因为 `start-frp.sh` 会以前台方式挂住 `frpc`。
-- 主进程返回结构化结果：`ok`、`status`、`message`。
-- 不把脚本输出直接当成状态来源，只作为错误信息补充展示。
+- The start script must run non-blocking, because `start-frp.sh` holds `frpc` in the foreground.
+- The main process returns a structured result: `ok`, `status`, `message`.
+- Don't treat script output as the source of truth for status; use it only as supplementary error info.
 
-### 3.3 手机远程服务
+### 3.3 Mobile remote service
 
-利用现有主进程内的远程服务能力：
+Reuse the existing remote-service capability in the main process:
 
-- 查询当前监听端口和局域网地址
-- 提供重启方法
+- Query the current listening port and LAN address
+- Provide a restart method
 
-实现方式：
+Implementation approach:
 
-- 优先复用 `remote-server.ts` 已有实例和状态。
-- 如果当前实现没有显式重启入口，则在主进程增加一个受控重启包装方法，而不是在 renderer 侧重启应用。
+- Prefer reusing the existing `remote-server.ts` instance and state.
+- If the current implementation has no explicit restart entry point, add a controlled restart wrapper in the main process rather than restarting the app on the renderer side.
 
-## 状态模型
+## State model
 
-服务控制台统一返回如下结构：
+The service console returns the following unified structure:
 
 ```ts
 type ServiceStatus = {
@@ -186,41 +186,41 @@ type ServiceStatus = {
 };
 ```
 
-其中：
+Where:
 
-- `cc-connect` 额外附带飞书配置和配置路径
-- `frp` 额外附带脚本路径和配置路径
-- `remote-server` 额外附带端口、局域网地址
+- `cc-connect` additionally carries the Feishu config and config path
+- `frp` additionally carries the script path and config path
+- `remote-server` additionally carries the port and LAN address
 
-## 错误处理
+## Error handling
 
-- 配置保存失败时，保留用户输入，不清空表单。
-- `cc-connect` 未安装时，不阻止查看配置，但禁用启动相关按钮。
-- `FRP` 启动失败时，展示脚本 stderr 或超时错误。
-- 手机远程服务重启失败时，展示主进程返回的错误信息。
+- On config save failure, keep the user's input; don't clear the form.
+- When `cc-connect` isn't installed, don't block viewing the config, but disable the start-related buttons.
+- On `FRP` start failure, show the script's stderr or a timeout error.
+- On mobile remote service restart failure, show the error info returned by the main process.
 
-## 测试与验证
+## Testing and verification
 
-最少需要覆盖以下验证：
+At minimum, cover the following:
 
-1. `cc-connect` 配置读取正确，页面能回填 `app_id` 和 `app_secret`
-2. 修改飞书配置后，`config.toml` 对应字段被正确替换
-3. 点击“保存并重启”后，`cc-connect` 进程被重启且状态刷新
-4. `FRP` 运行中和未运行两种状态能正确识别
-5. 点击 `FRP` 启动 / 停止 / 重启后，状态能正确变化
-6. 手机远程服务卡片能显示当前访问地址和端口
-7. 手机远程服务重启后，页面能重新拿到可用地址
+1. `cc-connect` config is read correctly and the page pre-fills `app_id` and `app_secret`
+2. After modifying the Feishu config, the corresponding fields in `config.toml` are replaced correctly
+3. After clicking "Save and Restart," the `cc-connect` process is restarted and the status refreshes
+4. The two `FRP` states (running and not running) are identified correctly
+5. After clicking `FRP` Start / Stop / Restart, the status changes correctly
+6. The mobile remote service card shows the current access address and port
+7. After restarting the mobile remote service, the page can fetch a usable address again
 
-运行验证要求：
+Run-verification requirements:
 
-- 至少执行一次桌面端构建或开发启动，确认 renderer 和 main 均无编译错误
-- 至少手动验证一次 `cc-connect` 保存并重启
-- 至少手动验证一次 `FRP` 启停
+- Run at least one desktop build or dev launch to confirm no compilation errors in renderer or main
+- Manually verify `cc-connect` Save and Restart at least once
+- Manually verify `FRP` start/stop at least once
 
-## 分阶段实现建议
+## Phased implementation suggestion
 
-1. 先补主进程和 preload 的服务控制 API
-2. 再补 renderer 的 `服务` tab UI
-3. 最后做联调与状态刷新
+1. First add the service-control APIs in the main process and preload
+2. Then add the renderer's `Services` tab UI
+3. Finally do integration testing and status refresh
 
-这样可以避免先写 UI 后发现主进程状态模型不稳定。
+This avoids writing the UI first and then finding the main-process state model is unstable.

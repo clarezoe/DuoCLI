@@ -1,48 +1,50 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('duocli', {
-  // 设置窗口标题
+contextBridge.exposeInMainWorld('posse', {
+  // Set window title
   setWindowTitle: (title: string) => ipcRenderer.send('window:set-title', title),
   onCloseCurrentSession: (cb: () => void) =>
     ipcRenderer.on('app:close-current-session', () => cb()),
 
-  // 创建终端
+  // Create terminal
   createPty: (cwd: string, presetCommand: string, themeId: string, providerEnv?: Record<string, string>) =>
     ipcRenderer.invoke('pty:create', cwd, presetCommand, themeId, providerEnv),
 
-  // 写入数据 (改成 invoke 等待完成)
+  // Write data (changed to invoke to await completion)
   writePty: (id: string, data: string) =>
     ipcRenderer.invoke('pty:write', id, data),
 
-  // 调整大小 (改成 invoke 等待完成)
+  // Resize (changed to invoke to await completion)
   resizePty: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke('pty:resize', id, cols, rows),
 
-  // 销毁终端
+  // Destroy terminal
   destroyPty: (id: string) =>
     ipcRenderer.send('pty:destroy', id),
 
-  // 重命名终端
+  // Rename terminal
   renamePty: (id: string, title: string) =>
     ipcRenderer.send('pty:rename', id, title),
 
-  // 重新用 AI 生成标题
+  // Regenerate title with AI
   regenerateTitle: (id: string) =>
     ipcRenderer.invoke('pty:regenerate-title', id),
 
-  // 获取所有会话
+  // Get all sessions
   getSessions: () => ipcRenderer.invoke('pty:sessions'),
 
-  // 选择文件夹
+  // Select folder
   selectFolder: (currentPath?: string) => ipcRenderer.invoke('dialog:select-folder', currentPath),
-  // 读取目录树（用于左侧文件树）
+  // Read directory tree (for the left-side file tree)
   fileTreeListDir: (dirPath: string) => ipcRenderer.invoke('file-tree:list-dir', dirPath),
-  // 读取文件内容（用于右侧只读预览面板）
+  // Read file contents (for the right-side read-only preview panel)
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
-  // 同步最近目录到手机端远程服务
+  // List a directory's native session history in Claude Code
+  claudeSessionsList: (cwd: string) => ipcRenderer.invoke('claude-sessions:list', cwd),
+  // Sync recent directories to the mobile remote service
   remoteAddRecentCwd: (cwd: string) => ipcRenderer.invoke('remote:add-recent-cwd', cwd),
 
-  // 监听事件
+  // Event listeners
   onPtyData: (cb: (id: string, data: string) => void) =>
     ipcRenderer.on('pty:data', (_e, id, data) => cb(id, data)),
 
@@ -55,18 +57,18 @@ contextBridge.exposeInMainWorld('duocli', {
   onRemoteCreated: (cb: (sessionInfo: any) => void) =>
     ipcRenderer.on('pty:remote-created', (_e, info) => cb(info)),
 
-  // 远程服务器连接信息
+  // Remote server connection info
   onRemoteServerInfo: (cb: (info: { lanUrl: string; token: string; port: number; publicUrl?: string; tunnel?: { running: boolean; url: string; message?: string } }) => void) =>
     ipcRenderer.on('remote:server-info', (_e, info) => cb(info)),
-  // 渲染进程主动获取远程服务器信息（解决竞态问题）
+  // Renderer proactively fetches remote server info (resolves a race condition)
   getRemoteServerInfo: () => ipcRenderer.invoke('remote:get-server-info'),
 
-  // 剪贴板图片
+  // Clipboard image
   clipboardSaveImage: () => ipcRenderer.invoke('clipboard:save-image'),
-  // 剪贴板文件路径
+  // Clipboard file path
   clipboardGetFilePath: () => ipcRenderer.invoke('clipboard:get-file-path'),
 
-  // 文件监听
+  // File watching
   filewatcherStart: (cwd: string) => ipcRenderer.invoke('filewatcher:start', cwd),
   filewatcherStop: () => ipcRenderer.invoke('filewatcher:stop'),
   filewatcherOpen: (filePath: string) => ipcRenderer.invoke('filewatcher:open', filePath),
@@ -75,32 +77,32 @@ contextBridge.exposeInMainWorld('duocli', {
   onFileChange: (cb: (filename: string, eventType: string) => void) =>
     ipcRenderer.on('filewatcher:change', (_e, filename, eventType) => cb(filename, eventType)),
 
-  // 在 Finder 中打开目录
+  // Open directory in Finder
   openFolder: (folderPath: string) => ipcRenderer.invoke('shell:open-folder', folderPath),
 
-  // 读取目录内容
+  // Read directory contents
   readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:read-directory', dirPath),
 
-  // 用默认应用打开文件
+  // Open file with default app
   openFile: (filePath: string) => ipcRenderer.invoke('shell:open-file', filePath),
 
-  // 打开外部链接
+  // Open external link
   openUrl: (url: string) => ipcRenderer.invoke('shell:open-url', url),
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
   getTerminalClientUrl: () => ipcRenderer.invoke('terminal-client:get-url'),
 
-  // AI 配置 API
+  // AI config API
   aiApplyConfig: (config: { apiFormat: string; baseUrl: string; apiKey: string; model: string }) => ipcRenderer.invoke('ai:apply-config', config),
   aiTestConfig: (config: { apiFormat: string; baseUrl: string; apiKey: string; model: string }) => ipcRenderer.invoke('ai:test-config', config),
   aiGetCurrentConfig: () => ipcRenderer.invoke('ai:get-current-config'),
-  // 获取 CLI 实际使用的模型提供商
+  // Get the model provider actually used by the CLI
   getCliProvider: (presetCommand: string) => ipcRenderer.invoke('cli:get-provider', presetCommand),
 
-  // Claude 供应商配置
+  // Claude provider config
   claudeProvidersList: () => ipcRenderer.invoke('claude-providers:list'),
   claudeProvidersSave: (providers: any[]) => ipcRenderer.invoke('claude-providers:save', providers),
 
-  // Devin 账号管理
+  // Devin account management
   devinAccountsList: () => ipcRenderer.invoke('devin-accounts:list'),
   devinAccountsAdd: (email: string, password: string) => ipcRenderer.invoke('devin-accounts:add', email, password),
   devinAccountsAddBatch: (text: string) => ipcRenderer.invoke('devin-accounts:add-batch', text),
@@ -111,11 +113,11 @@ contextBridge.exposeInMainWorld('duocli', {
   devinAccountsQuotaOne: (email: string) => ipcRenderer.invoke('devin-accounts:quota-one', email),
   devinAccountsRotateDevice: () => ipcRenderer.invoke('devin-accounts:rotate-device'),
 
-  // 会话状态同步：renderer → main（供手机端读取）
+  // Session status sync: renderer -> main (read by mobile)
   syncSessionStatus: (statuses: Record<string, string>) =>
     ipcRenderer.send('session:sync-status', statuses),
 
-  // 催工配置：供 main 进程从 renderer 读写
+  // Auto-continue config: read/written by the main process from the renderer
   onGetAutoContinueConfig: (cb: (sessionId: string) => void) =>
     ipcRenderer.on('auto-continue:get', (_e, sessionId) => cb(sessionId)),
   sendAutoContinueConfig: (sessionId: string, config: any) =>
@@ -149,7 +151,7 @@ contextBridge.exposeInMainWorld('duocli', {
   onChatTitleUpdate: (cb: (sessionId: string, title: string) => void) =>
     ipcRenderer.on('chat:title-update', (_e, sessionId, title) => cb(sessionId, title)),
 
-  // ========== 已关闭会话 ==========
+  // ========== Closed sessions ==========
   closedSessionsList: () => ipcRenderer.invoke('closed-sessions:list'),
   closedSessionsRemove: (id: string) => ipcRenderer.invoke('closed-sessions:remove', id),
   closedSessionsRename: (id: string, title: string) => ipcRenderer.invoke('closed-sessions:rename', id, title),
@@ -157,7 +159,7 @@ contextBridge.exposeInMainWorld('duocli', {
   onClosedSessionsUpdate: (cb: (sessions: Array<{ id: string; title: string; cwd: string; presetCommand: string; resumeId: string; resumeCommand: string; displayName: string; closedAt: number }>) => void) =>
     ipcRenderer.on('closed-sessions:update', (_e, sessions) => cb(sessions)),
 
-  // ========== 已关闭 Chat 会话 ==========
+  // ========== Closed chat sessions ==========
   closedChatList: () => ipcRenderer.invoke('closed-chat:list'),
   closedChatRemove: (id: string) => ipcRenderer.invoke('closed-chat:remove', id),
   closedChatClear: () => ipcRenderer.invoke('closed-chat:clear'),
@@ -165,7 +167,7 @@ contextBridge.exposeInMainWorld('duocli', {
   onClosedChatUpdate: (cb: (sessions: Array<{ id: string; title: string; model: string; workspace: string; messages: Array<{ role: string; content: string; timestamp: number }>; closedAt: number }>) => void) =>
     ipcRenderer.on('closed-chat-sessions:update', (_e, sessions) => cb(sessions)),
 
-  // 自动切号状态
+  // Auto account-switch status
   onAutoSwitchStatus: (cb: (id: string, status: string, detail?: string) => void) =>
     ipcRenderer.on('pty:auto-switch-status', (_e, id, status, detail) => cb(id, status, detail)),
 });

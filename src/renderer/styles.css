@@ -20,7 +20,7 @@
   --danger: #f44747;
 }
 
-/* 面板收起/展开按钮 */
+/* Panel collapse/expand button */
 .panel-toggle {
   width: 16px;
   background: var(--bg-toolbar);
@@ -46,7 +46,7 @@
   color: #fff;
 }
 
-/* 拖拽条 */
+/* Resizer bar */
 .resizer {
   width: 4px;
   background: transparent;
@@ -77,7 +77,7 @@ html, body {
   background: var(--bg-primary);
 }
 
-/* 顶部工具栏 */
+/* Top toolbar */
 #toolbar {
   height: var(--toolbar-height);
   background: var(--bg-toolbar);
@@ -208,7 +208,7 @@ html, body {
   border-color: var(--accent);
 }
 
-/* 自定义配色下拉 */
+/* Custom color-scheme dropdown */
 .custom-select {
   position: relative;
   min-width: 100px;
@@ -308,7 +308,7 @@ html, body {
   padding: 0 10px;
 }
 
-/* 新建终端弹窗 */
+/* New terminal dialog */
 .new-session-overlay {
   position: fixed;
   inset: 0;
@@ -417,13 +417,13 @@ html, body {
   color: var(--text-primary);
 }
 
-/* 主体布局 */
+/* Main layout */
 #main {
   display: flex;
   height: 100%;
 }
 
-/* 左侧目录树 */
+/* Left file tree */
 #file-tree-panel {
   width: var(--file-tree-width);
   background: #212224;
@@ -525,7 +525,7 @@ html, body {
   color: var(--text-primary);
 }
 
-/* 目录行"在 Finder 中打开"按钮 */
+/* Directory row "Reveal in Finder" button */
 .file-tree-open-folder {
   font-size: 11px;
   cursor: pointer;
@@ -543,7 +543,7 @@ html, body {
   opacity: 1 !important;
 }
 
-/* 终端区域 */
+/* Terminal area */
 #terminal-area {
   flex: 1;
   min-width: 0;
@@ -553,7 +553,7 @@ html, body {
   position: relative;
 }
 
-/* 文件预览面板：覆盖在终端区域上方 */
+/* File preview panel: overlays the terminal area */
 #file-preview-panel {
   position: absolute;
   inset: 0;
@@ -645,7 +645,7 @@ html, body {
 }
 
 .terminal-container .xterm-screen {
-  /* 不设 height: 100%，让 FitAddon 根据容器实际尺寸计算行数 */
+  /* Don't set height: 100% so FitAddon computes rows from the container's actual size */
 }
 
 .scroll-bottom-btn {
@@ -674,7 +674,7 @@ html, body {
   color: #fff;
 }
 
-/* 右侧边栏 */
+/* Right sidebar */
 #sidebar {
   width: var(--sidebar-width);
   background: var(--bg-sidebar);
@@ -699,7 +699,7 @@ html, body {
   flex-shrink: 0;
 }
 
-/* 远程服务器连接信息 */
+/* Remote server connection info */
 .remote-server-info {
   padding: 8px 10px;
   background: var(--bg-secondary);
@@ -726,7 +726,7 @@ html, body {
   opacity: 0.8;
 }
 
-/* 侧边栏 Tab 切换 */
+/* Sidebar tab switching */
 #sidebar-tabs {
   display: flex;
   border-bottom: 1px solid var(--border-color);
@@ -804,7 +804,7 @@ html, body {
   padding: 4px 0;
 }
 
-/* 会话项：垂直排列标题行和操作行 */
+/* Session item: stack the title row and action row vertically */
 .session-item {
   display: flex;
   flex-direction: column;
@@ -815,7 +815,7 @@ html, body {
   background: var(--group-color, transparent);
 }
 
-/* 标题行：置顶按钮 + 标题 + 铅笔 + 催工开关 */
+/* Title row: pin button + title + pencil + loop toggle */
 .session-item-top {
   display: flex;
   align-items: center;
@@ -824,7 +824,7 @@ html, body {
   min-width: 0;
 }
 
-/* 操作行：时间 + 关闭按钮 */
+/* Action row: time + close button */
 .session-item-bottom {
   display: flex;
   align-items: center;
@@ -856,7 +856,7 @@ html, body {
   gap: 2px;
 }
 
-/* 标题行：标题和编辑按钮在同一行 */
+/* Title row: title and edit button on the same line */
 .session-title-row {
   display: flex;
   align-items: center;
@@ -914,7 +914,7 @@ html, body {
   background: var(--cli-tag-bg, transparent);
 }
 
-/* 模型提供商标签（显示在 CLI 标签右侧） */
+/* Model provider tag (shown to the right of the CLI tag) */
 .session-provider-tag {
   font-size: 9px;
   white-space: nowrap;
@@ -963,7 +963,7 @@ html, body {
   color: #fff;
 }
 
-/* 自动继续 Toggle 开关 */
+/* Auto-continue toggle switch */
 .session-auto-continue-toggle {
   position: relative;
   display: inline-flex;
@@ -1020,7 +1020,7 @@ html, body {
   background-color: #66bb6a;
 }
 
-/* 自动继续文字标签 */
+/* Auto-continue text label */
 .session-auto-continue-label {
   font-size: 11px;
   padding: 3px 8px;
@@ -1046,7 +1046,7 @@ html, body {
   background: #66bb6a;
 }
 
-/* 自动切号状态标签 */
+/* Auto account-switch status label */
 .session-switch-status {
   font-size: 10px;
   padding: 2px 7px;
@@ -1085,7 +1085,7 @@ html, body {
   50% { opacity: 0.55; }
 }
 
-/* 配置按钮 */
+/* Config button */
 .session-auto-continue-config-btn {
   background: none;
   border: none;
@@ -1102,7 +1102,7 @@ html, body {
   opacity: 1;
 }
 
-/* Pin 置顶按钮 */
+/* Pin button */
 .session-pin {
   width: 14px;
   height: 18px;
@@ -1132,7 +1132,7 @@ html, body {
   opacity: 1 !important;
 }
 
-/* 置顶会话左边框金色 */
+/* Gold left border for pinned sessions */
 .session-item.pinned {
   border-left-color: #e5a100;
 }
@@ -1177,7 +1177,7 @@ html, body {
   color: #fff;
 }
 
-/* 新建按钮 */
+/* New button */
 #new-term-btn {
   margin: 8px 12px;
   padding: 8px;
@@ -1194,7 +1194,7 @@ html, body {
   opacity: 0.85;
 }
 
-/* 滚动条 */
+/* Scrollbar */
 #session-list::-webkit-scrollbar {
   width: 6px;
 }
@@ -1212,7 +1212,7 @@ html, body {
   background: var(--text-secondary);
 }
 
-/* 空状态 */
+/* Empty state */
 #empty-state {
   display: flex;
   align-items: center;
@@ -1222,7 +1222,7 @@ html, body {
   font-size: 14px;
 }
 
-/* 文件状态栏 */
+/* File statusbar */
 #file-statusbar {
   height: 24px;
   background: var(--bg-toolbar);
@@ -1277,7 +1277,7 @@ html, body {
   color: #fff;
 }
 
-/* 会话分组头 */
+/* Session group header */
 .session-group-header {
   display: flex;
   align-items: center;
@@ -1334,7 +1334,7 @@ html, body {
   flex-shrink: 0;
 }
 
-/* 分组内会话项 active 状态覆盖背景 */
+/* Active-state background override for session items within a group */
 .session-item.active {
   background: #1a3a5c;
   border-left-color: transparent;
@@ -1344,7 +1344,7 @@ html, body {
   filter: brightness(1.15);
 }
 
-/* 确认弹窗 */
+/* Confirmation dialog */
 .confirm-overlay {
   position: fixed;
   inset: 0;
@@ -1404,7 +1404,7 @@ html, body {
   opacity: 0.85;
 }
 
-/* ========== AI 配置 Tab ========== */
+/* ========== AI Config Tab ========== */
 
 #ai-config-form {
   flex: 1;
@@ -1527,7 +1527,7 @@ select.ai-form-input {
   width: 100%;
 }
 
-/* 终端右键菜单 */
+/* Terminal context menu */
 .term-context-menu {
   position: fixed;
   z-index: 10000;
@@ -1554,7 +1554,7 @@ select.ai-form-input {
   color: #fff;
 }
 
-/* 侧边栏底部版权 */
+/* Sidebar footer / copyright */
 #sidebar-footer {
   padding: 10px 12px;
   border-top: 1px solid var(--border-color);
@@ -1589,50 +1589,13 @@ select.ai-form-input {
   text-decoration: underline;
 }
 
-.footer-tip {
-  margin-top: 6px;
-  font-size: 9px;
-  line-height: 1.5;
+.footer-tagline {
+  font-size: 10px;
   color: var(--text-secondary);
   opacity: 0.8;
-  cursor: pointer;
 }
 
-.footer-tip:hover {
-  color: var(--accent);
-  opacity: 1;
-}
-
-/* 二维码弹窗 */
-.qrcode-dialog {
-  background: var(--bg-sidebar);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 20px;
-  text-align: center;
-  cursor: pointer;
-}
-
-.qrcode-img {
-  width: 200px;
-  height: 200px;
-  border-radius: 6px;
-}
-
-.qrcode-text {
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.qrcode-sub {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-/* ========== 自定义预设弹窗 ========== */
+/* ========== Custom preset dialog ========== */
 
 .preset-form {
   display: flex;
@@ -1949,7 +1912,7 @@ select.ai-form-input {
   /* chat icon styling */
 }
 
-/* Chat 会话标题：左对齐、小字号、显示更多 */
+/* Chat session title: left-aligned, smaller font, show more */
 .chat-session-title {
   font-size: 12px !important;
   text-align: left !important;
@@ -1984,7 +1947,7 @@ select.ai-form-input {
   font-size: 14px;
 }
 
-/* ========== Devin 账号管理 ========== */
+/* ========== Devin account management ========== */
 #devin-accounts-header {
   display: flex;
   align-items: center;

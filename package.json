@@ -1,7 +1,7 @@
 {
-  "name": "duocli",
-  "version": "1.0.0",
-  "description": "手机电脑实时同步的 AI 编程终端 | AI Coding Terminal with Real-time Mobile-Desktop Sync — Wireless LAN connection, code from anywhere",
+  "name": "posse",
+  "version": "1.1.0",
+  "description": "Your AI coding posse | AI Coding Terminal with Real-time Mobile-Desktop Sync — Wireless LAN connection, code from anywhere",
   "main": "dist/main/index.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",
@@ -39,7 +39,7 @@
     "pwa",
     "websocket"
   ],
-  "author": "大壮好大",
+  "author": "Posse",
   "license": "MIT",
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -78,8 +78,8 @@
   },
   "build": {
     "npmRebuild": true,
-    "appId": "com.duocli.app",
-    "productName": "DuoCLI",
+    "appId": "com.posse.app",
+    "productName": "Posse",
     "directories": {
       "output": "release"
     },

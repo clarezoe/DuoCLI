@@ -28,11 +28,11 @@ export type RemoteConnectionStatus = RemoteServerInfo & {
   subscribedSessions: number;
 };
 
-// 缓存 ptyManager 和回调供远程创建使用（在 startRemoteServer 中设置）
+// Cache ptyManager and callbacks for remote creation (set in startRemoteServer)
 let cachedPtyManager: PtyBackend | null = null;
 let cachedOnRemoteCreate: ((sessionInfo: any) => void) | null = null;
 
-// 根据 preset 命令获取实际使用的模型提供商（与 index.ts 保持一致）
+// Resolve the model provider actually used from the preset command (kept consistent with index.ts)
 function getCliProvider(presetCommand: string): string | null {
   const home = os.homedir();
 
@@ -128,13 +128,13 @@ function resolveSessionDisplayName(presetCommand: string, customPresets: CustomP
   );
   return customPreset
     ? (presetCommand === customPreset.command + ' ' + customPreset.autoFlag
-        ? customPreset.name + '全自动' : customPreset.name)
+        ? customPreset.name + ' (auto)' : customPreset.name)
     : displayName;
 }
 
-const PORT = parseInt(process.env.DUOCLI_REMOTE_PORT || '9800');
+const PORT = parseInt(process.env.POSSE_REMOTE_PORT || '9800');
 
-/** 杀掉占用指定端口的残留进程（旧 DuoCLI 实例崩溃残留） */
+/** Kill leftover processes occupying the given port (left over from a crashed old Posse instance) */
 function killPortOccupants(port: number): void {
   try {
     const out = execSync(`lsof -i :${port} -t -sTCP:LISTEN 2>/dev/null || true`, {
@@ -147,15 +147,15 @@ function killPortOccupants(port: number): void {
         process.kill(pid, 'SIGKILL');
         console.log(`[RemoteServer] Killed port ${port} occupant PID ${pid}`);
       } catch {
-        // 进程可能已不存在
+        // Process may no longer exist
       }
     }
   } catch {
-    // lsof 失败，忽略
+    // lsof failed, ignore
   }
 }
 
-// 获取本机局域网 IP
+// Get this machine's LAN IP
 function getLocalIP(): string {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
@@ -168,9 +168,9 @@ function getLocalIP(): string {
   return '127.0.0.1';
 }
 
-// ========== 配置持久化 ==========
+// ========== Config persistence ==========
 
-const CONFIG_DIR = path.join(process.env.HOME || os.homedir(), '.duocli-mobile');
+const CONFIG_DIR = path.join(process.env.HOME || os.homedir(), '.posse-mobile');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 interface CustomPreset {
@@ -236,11 +236,11 @@ function addRecentCwdInConfig(config: RemoteConfig, cwd: string): void {
 }
 
 /**
- * 启动远程访问服务器，复用桌面端的 ptyManager
- * @param ptyManager 桌面端的终端管理器实例
- * @param onRemoteCreate 手机端创建会话后的回调，通知桌面端 renderer 刷新
- * @param onRemoteDestroy 手机端销毁会话后的回调
- * @param onServerStarted 服务器启动后的回调，用于返回连接信息（IP、端口、Token）
+ * Start the remote-access server, reusing the desktop ptyManager.
+ * @param ptyManager The desktop terminal manager instance.
+ * @param onRemoteCreate Callback after the mobile client creates a session, to refresh the desktop renderer.
+ * @param onRemoteDestroy Callback after the mobile client destroys a session.
+ * @param onServerStarted Callback after the server starts, returning connection info (IP, port, token).
  */
 export function startRemoteServer(
   ptyManager: PtyBackend,
@@ -249,7 +249,7 @@ export function startRemoteServer(
   onServerStarted?: (info: RemoteServerInfo) => void,
   onConnectionStatusChanged?: (status: RemoteConnectionStatus) => void,
 ): void {
-  // 缓存供 Bridge 事件使用
+  // Cache for use by Bridge events
   cachedPtyManager = ptyManager;
   cachedOnRemoteCreate = onRemoteCreate || null;
 
@@ -258,22 +258,22 @@ export function startRemoteServer(
 
   console.log('[RemoteServer] Starting server, IP:', LOCAL_IP, 'PORT:', PORT);
 
-  webpush.setVapidDetails('mailto:duocli@localhost', config.vapidPublic, config.vapidPrivate);
+  webpush.setVapidDetails('mailto:posse@localhost', config.vapidPublic, config.vapidPrivate);
 
   const app = express();
   const server = http.createServer(app);
 
   app.use(express.json());
 
-  // 静态文件：serve mobile/client 目录
+  // Static files: serve the mobile/client directory
   const clientDir = path.join(__dirname, '../../mobile/client');
   app.use(express.static(clientDir));
 
-  // 认证中间件
+  // Auth middleware
   function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
     if (req.path === '/auth' || req.path === '/server-info' || req.path === '/vapid-public-key') return next();
     const t = req.headers['authorization']?.replace('Bearer ', '') || req.query.token as string;
-    if (t !== config.token) { res.status(401).json({ error: '未授权' }); return; }
+    if (t !== config.token) { res.status(401).json({ error: 'Unauthorized' }); return; }
     next();
   }
 
@@ -281,8 +281,8 @@ export function startRemoteServer(
 
   // ========== WebSocket ==========
 
-  // 启用 permessage-deflate：终端 ANSI 文本压缩比通常 5-10x，
-  // 对弱网首屏 replay 与刷屏 output 都是关键收益。threshold 以下不压缩，避免小消息反而变大。
+  // Enable permessage-deflate: terminal ANSI text typically compresses 5-10x,
+  // a key win for first-paint replay on weak networks and for screen-flooding output. Below the threshold, do not compress to avoid small messages getting larger.
   const wss = new WebSocketServer({
     server,
     path: '/ws',
@@ -321,7 +321,7 @@ export function startRemoteServer(
     }
   };
 
-  // WS 层心跳：清理半开连接，避免弱网下“假在线”导致客户端一直卡重连
+  // WS-level heartbeat: clean up half-open connections to avoid "fake online" on weak networks keeping clients stuck reconnecting
   const wsHeartbeatTimer = setInterval(() => {
     wss.clients.forEach((client) => {
       const wsClient = client as AliveWebSocket;
@@ -348,7 +348,7 @@ export function startRemoteServer(
 
     const url = new URL(req.url || '', 'http://localhost');
     if (url.searchParams.get('token') !== config.token) {
-      ws.close(4001, '未授权');
+      ws.close(4001, 'Unauthorized');
       return;
     }
 
@@ -369,7 +369,7 @@ export function startRemoteServer(
           if (sessionClients) sessionClients.add(ws);
           notifyConnectionStatusChanged();
 
-          // 回放历史 buffer（始终发送 replay，即使 rawBuffer 为空，让客户端知道订阅已生效）
+          // Replay the historical buffer (always send replay, even if rawBuffer is empty, so the client knows the subscription took effect)
           const rawBuffer = await ptyManager.getRawBuffer(data.sessionId).catch(() => '');
           ws.send(JSON.stringify({ type: 'replay', data: rawBuffer }));
         }
@@ -378,18 +378,18 @@ export function startRemoteServer(
           await ptyManager.write(subscribedSession, data.data);
         }
 
-        // base64 编码的 input，解码后写入 pty（避免控制字符在 JSON 传输中丢失）
+        // base64-encoded input, decoded before writing to pty (avoids losing control characters during JSON transport)
         if (data.type === 'input_b64' && subscribedSession && typeof data.data === 'string') {
           const decoded = Buffer.from(data.data, 'base64').toString('utf-8');
           await ptyManager.write(subscribedSession, decoded);
         }
 
-        // 手机端 resize — 同步调整 pty 尺寸，让输出按手机列数排版
+        // Mobile resize — adjust pty size in sync so output is laid out to the phone's column count
         if (data.type === 'resize' && subscribedSession && data.cols && data.rows) {
           await ptyManager.resize(subscribedSession, data.cols, data.rows);
         }
 
-        // 心跳 ping，忽略即可
+        // Heartbeat ping, just ignore
         if (data.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
         }
@@ -403,15 +403,15 @@ export function startRemoteServer(
     });
   });
 
-  // pty rawData → 推送给 WebSocket 客户端（由 index.ts 中 onRawData 回调触发）
-  // 微批合并：8ms 内的多次 onData 拼成一帧再 send，减少 ws 帧数与 JSON 包头开销。
-  // 8ms 在人眼几乎察觉不到，却能把 npm install / 编译刷屏从几百帧压到几十帧。
+  // pty rawData -> push to WebSocket clients (triggered by the onRawData callback in index.ts)
+  // Micro-batching: multiple onData within 8ms are combined into one frame before send, reducing ws frame count and JSON header overhead.
+  // 8ms is barely perceptible to the eye, yet it cuts npm install / compile screen-flooding from hundreds of frames to tens.
   const pendingChunks = new Map<string, string>();
   const pendingTimers = new Map<string, NodeJS.Timeout>();
   const FLUSH_DELAY_MS = 8;
-  const FLUSH_MAX_BYTES = 32768; // 累积超过 32KB 立即冲刷，避免长期积压
-  // 弱网背压：单连接 socket 缓冲区超过 1MB 视为积压，直接 terminate
-  // 客户端重连时通过 replay 拿到 rawBuffer 最新 128KB，正好跳过所有堆积的旧帧。
+  const FLUSH_MAX_BYTES = 32768; // Flush immediately once accumulation exceeds 32KB to avoid long-term backlog
+  // Weak-network backpressure: if a single connection's socket buffer exceeds 1MB, treat it as backlog and terminate it directly.
+  // On reconnect the client gets the latest 128KB of rawBuffer via replay, neatly skipping all the piled-up old frames.
   const WS_BACKPRESSURE_BYTES = 1024 * 1024;
 
   const flushChunks = (id: string) => {
@@ -426,7 +426,7 @@ export function startRemoteServer(
     for (const ws of clients) {
       if (ws.readyState !== WebSocket.OPEN) continue;
       if (ws.bufferedAmount > WS_BACKPRESSURE_BYTES) {
-        // 弱网积压：放弃这条连接，触发客户端重连+replay
+        // Weak-network backlog: drop this connection, triggering a client reconnect + replay
         ws.terminate();
         clients.delete(ws);
         continue;
@@ -450,15 +450,15 @@ export function startRemoteServer(
     }
   };
 
-  // ========== API 路由 ==========
+  // ========== API routes ==========
 
   app.get('/api/server-info', (_req, res) => {
     res.json({ ip: LOCAL_IP, port: PORT, hostname: os.hostname() });
   });
 
-  // 返回当前所有可用的局域网 IPv4 地址（多网卡 / 多网段）
-  // 手机端在 CF Tunnel 模式下用此接口探测是否能直连 LAN
-  // 注意：此接口需要 token 鉴权（走 /api 前缀），避免泄露内网拓扑
+  // Return all currently available LAN IPv4 addresses (multiple NICs / subnets)
+  // The mobile client uses this in CF Tunnel mode to probe whether it can connect to the LAN directly
+  // Note: this endpoint requires token auth (under the /api prefix) to avoid leaking the internal network topology
   app.get('/api/lan-info', (_req, res) => {
     const interfaces = os.networkInterfaces();
     const lanIps: string[] = [];
@@ -472,9 +472,9 @@ export function startRemoteServer(
     res.json({ lanIps, port: PORT, hostname: os.hostname() });
   });
 
-  // 1x1 透明 PNG，给手机端 <img> 探针用（HTTPS 页面下 fetch HTTP 会被
-  // Mixed Content 拦截，但 <img> 跨协议加载不被拦，可用 onload 判通断）
-  // 注意：不挂在 /api 下，避免 token 限制——这是公开探针端点
+  // 1x1 transparent PNG for the mobile <img> probe (on an HTTPS page, fetching HTTP is blocked
+  // by Mixed Content, but <img> cross-protocol loads are not, so onload can be used to test connectivity)
+  // Note: not mounted under /api to avoid the token restriction — this is a public probe endpoint
   const PING_PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
     'base64'
@@ -488,7 +488,7 @@ export function startRemoteServer(
     if (req.body.token === config.token) {
       res.json({ ok: true, ip: LOCAL_IP, port: PORT });
     } else {
-      res.status(401).json({ error: 'Token 错误' });
+      res.status(401).json({ error: 'Invalid token' });
     }
   });
 
@@ -496,7 +496,7 @@ export function startRemoteServer(
     res.json({ key: config.vapidPublic });
   });
 
-  // ========== 自定义预设同步 API ==========
+  // ========== Custom preset sync API ==========
 
   app.get('/api/custom-presets', (_req, res) => {
     res.json(config.customPresets || []);
@@ -504,7 +504,7 @@ export function startRemoteServer(
 
   app.put('/api/custom-presets', (req, res) => {
     const list = req.body;
-    if (!Array.isArray(list)) { res.status(400).json({ error: '需要数组' }); return; }
+    if (!Array.isArray(list)) { res.status(400).json({ error: 'Array required' }); return; }
     config.customPresets = list;
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
     res.json({ ok: true });
@@ -512,7 +512,7 @@ export function startRemoteServer(
 
   app.post('/api/push/subscribe', (req, res) => {
     const subscription = req.body.subscription as webpush.PushSubscription;
-    if (!subscription) { res.status(400).json({ error: '缺少 subscription' }); return; }
+    if (!subscription) { res.status(400).json({ error: 'Missing subscription' }); return; }
     const exists = config.pushSubscriptions.some(s => s.endpoint === subscription.endpoint);
     if (!exists) {
       config.pushSubscriptions.push(subscription);
@@ -521,7 +521,7 @@ export function startRemoteServer(
     res.json({ ok: true });
   });
 
-  // 获取会话的 UI 状态（busy/unread/idle），由 renderer 同步到 main
+  // Get the session UI state (busy/unread/idle), synced from the renderer to main
   function getSessionStatus(id: string, exitState?: unknown): string {
     if (exitState) return 'exited';
     const statuses = (global as any).__sessionStatuses || {};
@@ -541,13 +541,13 @@ export function startRemoteServer(
     };
   }
 
-  // 会话列表 — 直接读 ptyManager
+  // Session list — read directly from ptyManager
   app.get('/api/sessions', (_req, res) => {
     const sessions = ptyManager.getAllSessions().map(s => mapSessionToApi(s));
     res.json(sessions);
   });
 
-  // 最近工作目录（桌面端同步 + 运行中会话 cwd 去重合并）
+  // Recent working directories (desktop-synced + running-session cwds, deduplicated and merged)
   app.get('/api/recent-cwds', (_req, res) => {
     const fromSessions = ptyManager.getAllSessions().map(s => normalizeCwd(s.cwd)).filter(Boolean);
     const merged = [...fromSessions, ...config.recentCwds];
@@ -559,7 +559,7 @@ export function startRemoteServer(
     res.json({ items: uniq });
   });
 
-  // 创建会话 — 通过 ptyManager 创建，通知桌面端
+  // Create a session — created via ptyManager, notifying the desktop
   app.post('/api/sessions', async (req, res) => {
     const { cwd, presetCommand, themeId, providerEnv } = req.body;
     const targetCwd = cwd || process.env.HOME || os.homedir();
@@ -582,65 +582,65 @@ export function startRemoteServer(
       onRemoteCreate?.(info);
       res.json(info);
     } catch (e: any) {
-      res.status(500).json({ error: '创建失败: ' + (e.message || e) });
+      res.status(500).json({ error: 'Creation failed: ' + (e.message || e) });
     }
   });
 
-  // 输入
+  // Input
   app.post('/api/sessions/:id/input', async (req, res) => {
     const { input } = req.body;
-    if (typeof input !== 'string') { res.status(400).json({ error: '缺少 input' }); return; }
+    if (typeof input !== 'string') { res.status(400).json({ error: 'Missing input' }); return; }
     const data = input.endsWith('\r') || input.endsWith('\n') ? input : input + '\r';
     await ptyManager.write(req.params.id, data);
     res.json({ ok: true });
   });
 
-  // 原始键码
+  // Raw key code
   app.post('/api/sessions/:id/key', async (req, res) => {
     const { key } = req.body;
-    if (typeof key !== 'string') { res.status(400).json({ error: '缺少 key' }); return; }
+    if (typeof key !== 'string') { res.status(400).json({ error: 'Missing key' }); return; }
     await ptyManager.write(req.params.id, key);
     res.json({ ok: true });
   });
 
-  // 文件上传 — 存到会话的 cwd
+  // File upload — saved to the session's cwd
   app.post('/api/sessions/:id/upload', express.raw({ type: '*/*', limit: '50mb' }), (req, res) => {
     const session = ptyManager.getSession(req.params.id);
-    if (!session) { res.status(404).json({ error: '会话不存在' }); return; }
+    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
     const rawName = (req.headers['x-filename'] as string) || `upload_${Date.now()}`;
-    // 路径穿越防护：只取 basename，再校验落点必须在 cwd 下
+    // Path-traversal protection: take only the basename, then verify the target lands under cwd
     const filename = path.basename(rawName);
     if (!filename || filename === '.' || filename === '..') {
-      res.status(400).json({ error: '非法文件名' }); return;
+      res.status(400).json({ error: 'Invalid filename' }); return;
     }
     const decoded = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
     const dest = path.resolve(session.cwd, filename);
     const cwdReal = path.resolve(session.cwd);
     if (!dest.startsWith(cwdReal + path.sep) && dest !== cwdReal) {
-      res.status(400).json({ error: '非法路径' }); return;
+      res.status(400).json({ error: 'Invalid path' }); return;
     }
     try {
       fs.writeFileSync(dest, decoded);
       res.json({ ok: true, path: dest, size: decoded.length });
     } catch (e: any) {
-      res.status(500).json({ error: '写入失败: ' + (e.message || e) });
+      res.status(500).json({ error: 'Write failed: ' + (e.message || e) });
     }
   });
 
-  // 重命名会话标题
+  // Rename session title
   app.put('/api/sessions/:id/title', async (req, res) => {
     const { title } = req.body;
     if (typeof title !== 'string' || !title.trim()) {
-      res.status(400).json({ error: '缺少 title' });
+      res.status(400).json({ error: 'Missing title' });
       return;
     }
     const session = ptyManager.getSession(req.params.id);
-    if (!session) { res.status(404).json({ error: '会话不存在' }); return; }
+    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
     await ptyManager.rename(req.params.id, title.trim());
     res.json({ ok: true });
   });
 
-  // 删除会话
+  // Delete session
   app.delete('/api/sessions/:id', async (req, res) => {
     await ptyManager.destroy(req.params.id);
     onRemoteDestroy?.(req.params.id);
@@ -653,7 +653,7 @@ export function startRemoteServer(
     return (global as any).__chatSessionManager || null;
   }
 
-  // 健康检查
+  // Health check
   app.get('/api/chat/health', async (_req, res) => {
     const mgr = getChatManager();
     if (!mgr) { res.json({ ok: false, error: 'Chat manager not ready' }); return; }
@@ -666,7 +666,7 @@ export function startRemoteServer(
     });
   });
 
-  // 手动重启/启动代理
+  // Manually restart/start the proxy
   app.post('/api/chat/proxy/start', async (_req, res) => {
     const proxyMgr = (global as any).__windsurfProxyManager;
     if (!proxyMgr) { res.status(500).json({ error: 'Proxy manager not available' }); return; }
@@ -674,7 +674,7 @@ export function startRemoteServer(
     res.json(result);
   });
 
-  // 模型列表
+  // Model list
   app.get('/api/chat/models', async (_req, res) => {
     const mgr = getChatManager();
     if (!mgr) { res.json([]); return; }
@@ -682,7 +682,7 @@ export function startRemoteServer(
     res.json(models);
   });
 
-  // 会话列表
+  // Session list
   app.get('/api/chat/sessions', (_req, res) => {
     const mgr = getChatManager();
     if (!mgr) { res.json([]); return; }
@@ -697,7 +697,7 @@ export function startRemoteServer(
     res.json(sessions);
   });
 
-  // 创建会话
+  // Create session
   app.post('/api/chat/sessions', (req, res) => {
     const mgr = getChatManager();
     if (!mgr) { res.status(500).json({ error: 'Chat manager not ready' }); return; }
@@ -712,21 +712,21 @@ export function startRemoteServer(
     });
   });
 
-  // 获取会话消息
+  // Get session messages
   app.get('/api/chat/sessions/:id/messages', (req, res) => {
     const mgr = getChatManager();
     const session = mgr?.getSession(req.params.id);
-    if (!session) { res.status(404).json({ error: '会话不存在' }); return; }
+    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
     res.json({ messages: session.messages });
   });
 
-  // 发送消息（SSE 流式返回）
+  // Send message (SSE streaming response)
   app.post('/api/chat/sessions/:id/messages', (req, res) => {
     const mgr = getChatManager();
     if (!mgr) { res.status(500).json({ error: 'Chat manager not ready' }); return; }
     const content = req.body?.content;
     if (typeof content !== 'string' || !content.trim()) {
-      res.status(400).json({ error: '缺少 content' });
+      res.status(400).json({ error: 'Missing content' });
       return;
     }
 
@@ -739,8 +739,8 @@ export function startRemoteServer(
 
     const sessionId = req.params.id;
 
-    // 监听器在 manager 上是全局共享的，必须按 sid 过滤，
-    // 否则其他并发会话的 delta 会窜进当前 SSE 响应
+    // Listeners are globally shared on the manager, so they must filter by sid,
+    // otherwise deltas from other concurrent sessions would leak into the current SSE response
     const onDelta = (sid: string, text: string) => {
       if (sid !== sessionId) return;
       res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
@@ -778,7 +778,7 @@ export function startRemoteServer(
     });
   });
 
-  // 终止会话
+  // Destroy session
   app.delete('/api/chat/sessions/:id', (req, res) => {
     const mgr = getChatManager();
     if (!mgr) { res.status(500).json({ error: 'Chat manager not ready' }); return; }
@@ -786,26 +786,26 @@ export function startRemoteServer(
     res.json({ ok: true });
   });
 
-  // 重命名会话
+  // Rename session
   app.put('/api/chat/sessions/:id/title', (req, res) => {
     const mgr = getChatManager();
     const { title } = req.body || {};
     if (typeof title !== 'string' || !title.trim()) {
-      res.status(400).json({ error: '缺少 title' });
+      res.status(400).json({ error: 'Missing title' });
       return;
     }
     mgr?.rename(req.params.id, title.trim());
     res.json({ ok: true });
   });
 
-  // 中断流
+  // Abort stream
   app.post('/api/chat/sessions/:id/abort', (req, res) => {
     const mgr = getChatManager();
     mgr?.abortStream(req.params.id);
     res.json({ ok: true });
   });
 
-  // ========== Android 设备 API ==========
+  // ========== Android device API ==========
 
   app.get('/api/android/devices', (_req, res) => {
     try {
@@ -816,7 +816,7 @@ export function startRemoteServer(
       });
       res.json({ devices });
     } catch (e: any) {
-      res.status(500).json({ error: '获取设备失败: ' + (e.message || e) });
+      res.status(500).json({ error: 'Failed to get devices: ' + (e.message || e) });
     }
   });
 
@@ -841,7 +841,7 @@ export function startRemoteServer(
       res.setHeader('Cache-Control', 'no-store');
       res.send(jpeg);
     } catch (e: any) {
-      res.status(500).json({ error: '截图失败: ' + (e.message || e) });
+      res.status(500).json({ error: 'Screenshot failed: ' + (e.message || e) });
     }
   });
 
@@ -850,11 +850,11 @@ export function startRemoteServer(
       const deviceId = typeof req.body.deviceId === 'string' ? req.body.deviceId.trim() : '';
       const x = Math.round(Number(req.body.x));
       const y = Math.round(Number(req.body.y));
-      if (!deviceId || isNaN(x) || isNaN(y)) { res.status(400).json({ error: '参数错误' }); return; }
+      if (!deviceId || isNaN(x) || isNaN(y)) { res.status(400).json({ error: 'Invalid parameters' }); return; }
       execFileSync(ADB, ['-s', deviceId, 'shell', 'input', 'tap', String(x), String(y)]);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: '点击失败: ' + (e.message || e) });
+      res.status(500).json({ error: 'Tap failed: ' + (e.message || e) });
     }
   });
 
@@ -866,11 +866,11 @@ export function startRemoteServer(
       const x2 = Math.round(Number(req.body.x2));
       const y2 = Math.round(Number(req.body.y2));
       const duration = Math.max(100, Math.min(3000, Math.round(Number(req.body.duration) || 300)));
-      if (!deviceId || [x1, y1, x2, y2].some(isNaN)) { res.status(400).json({ error: '参数错误' }); return; }
+      if (!deviceId || [x1, y1, x2, y2].some(isNaN)) { res.status(400).json({ error: 'Invalid parameters' }); return; }
       execFileSync(ADB, ['-s', deviceId, 'shell', 'input', 'swipe', String(x1), String(y1), String(x2), String(y2), String(duration)]);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: '滑动失败: ' + (e.message || e) });
+      res.status(500).json({ error: 'Swipe failed: ' + (e.message || e) });
     }
   });
 
@@ -878,7 +878,7 @@ export function startRemoteServer(
     try {
       const deviceId = typeof req.body.deviceId === 'string' ? req.body.deviceId.trim() : '';
       const command = typeof req.body.command === 'string' ? req.body.command.trim() : '';
-      if (!deviceId || !command) { res.status(400).json({ error: '参数错误' }); return; }
+      if (!deviceId || !command) { res.status(400).json({ error: 'Invalid parameters' }); return; }
       const out = execSync(`${ADB} -s ${deviceId} shell ${command}`, { encoding: 'utf8', timeout: 30000 });
       res.json({ output: out });
     } catch (e: any) {
@@ -890,8 +890,8 @@ export function startRemoteServer(
     try {
       const deviceId = typeof req.body.deviceId === 'string' ? req.body.deviceId.trim() : '';
       const text = typeof req.body.text === 'string' ? req.body.text : '';
-      if (!deviceId || !text) { res.status(400).json({ error: '参数错误' }); return; }
-      // 切到 ADBKeyboard 发送文字，再切回搜狗
+      if (!deviceId || !text) { res.status(400).json({ error: 'Invalid parameters' }); return; }
+      // Switch to ADBKeyboard to send the text, then switch back to Sogou
       execFileSync(ADB, ['-s', deviceId, 'shell', 'ime', 'set', 'com.android.adbkeyboard/.AdbIME']);
       execFileSync(ADB, ['-s', deviceId, 'shell', 'am', 'broadcast', '-a', 'ADB_INPUT_TEXT', '--es', 'msg', text]);
       execFileSync(ADB, ['-s', deviceId, 'shell', 'ime', 'set', 'com.sohu.inputmethod.sogouoem/.SogouIME']);
@@ -901,9 +901,9 @@ export function startRemoteServer(
     }
   });
 
-  // ========== 催工配置 API ==========
+  // ========== Auto-continue config API ==========
 
-  // 读取催工配置（从桌面端 renderer）
+  // Read the auto-continue config (from the desktop renderer)
   app.get('/api/sessions/:id/auto-continue', async (req, res) => {
     const getConfig = (global as any).__getAutoContinueConfig;
     if (!getConfig) { res.json(null); return; }
@@ -911,15 +911,15 @@ export function startRemoteServer(
     res.json(config);
   });
 
-  // 写入催工配置（同步到桌面端 renderer）
+  // Write the auto-continue config (synced to the desktop renderer)
   app.put('/api/sessions/:id/auto-continue', (req, res) => {
     const setConfig = (global as any).__setAutoContinueConfig;
-    if (!setConfig) { res.status(500).json({ error: '桌面端未就绪' }); return; }
+    if (!setConfig) { res.status(500).json({ error: 'Desktop not ready' }); return; }
     setConfig(req.params.id, req.body);
     res.json({ ok: true });
   });
 
-  // SSE 事件流
+  // SSE event stream
   app.get('/api/events', (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -935,9 +935,9 @@ export function startRemoteServer(
     req.on('close', () => { clearInterval(heartbeat); clearInterval(statusInterval); });
   });
 
-  // ========== 推送通知 ==========
+  // ========== Push notifications ==========
 
-  // 导出推送方法供外部调用
+  // Export the push method for external callers
   (startRemoteServer as any)._sendPush = (title: string, body: string, sessionId: string) => {
     const payload = JSON.stringify({ title, body, sessionId });
     for (const sub of config.pushSubscriptions) {
@@ -950,14 +950,14 @@ export function startRemoteServer(
     }
   };
 
-  // ========== 启动 ==========
+  // ========== Startup ==========
 
-  // 启动前清理：杀掉旧 DuoCLI 实例残留的 9800 端口进程
+  // Cleanup before start: kill the port-9800 process left over from an old Posse instance
   killPortOccupants(PORT);
 
   server.on('error', (err: any) => {
     console.error('[RemoteServer] Server error:', err.code, err.message);
-    // 端口被占用（旧实例崩溃残留），杀掉占用进程后重试一次
+    // Port is in use (left over from a crashed old instance); kill the occupant and retry once
     if (err.code === 'EADDRINUSE') {
       console.log('[RemoteServer] Port in use, killing occupant and retrying...');
       killPortOccupants(PORT);
@@ -978,7 +978,7 @@ export function startRemoteServer(
   server.listen(PORT, '0.0.0.0', () => {
     const lanUrl = `http://${LOCAL_IP}:${PORT}`;
     console.log('[RemoteServer] Server started, URL:', lanUrl);
-    // 通过回调返回连接信息，不再输出到终端
+    // Return connection info via callback, no longer printed to the terminal
     if (onServerStarted) {
       const serverInfo = { lanUrl, token: config.token, port: PORT };
       onServerStarted(serverInfo);
@@ -987,17 +987,17 @@ export function startRemoteServer(
   });
 }
 
-/** 推送 pty 原始数据给远程 WebSocket 客户端 */
+/** Push raw pty data to remote WebSocket clients */
 export function pushRawDataToRemote(id: string, data: string): void {
   (startRemoteServer as any)._pushRawData?.(id, data);
 }
 
-/** 发送推送通知 */
+/** Send a push notification */
 export function sendRemotePush(title: string, body: string, sessionId: string): void {
   (startRemoteServer as any)._sendPush?.(title, body, sessionId);
 }
 
-/** 桌面端同步最近目录到远程配置（供手机端新建会话下拉使用） */
+/** Sync recent directories from desktop into the remote config (used by the mobile client's new-session dropdown) */
 export function addRemoteRecentCwd(cwd: string): void {
   const normalized = normalizeCwd(cwd);
   if (!normalized) return;

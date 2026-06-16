@@ -137,7 +137,7 @@ export class PtyDaemonClient implements PtyBackend {
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
-        DUOCLI_PTY_DAEMON_CONFIG: getPtyDaemonConfigPath(),
+        POSSE_PTY_DAEMON_CONFIG: getPtyDaemonConfigPath(),
       },
     });
     child.unref();

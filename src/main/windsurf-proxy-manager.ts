@@ -9,7 +9,7 @@ const WINDSURF_PROXY_PORT = 42100;
 const PROXY_READY_TIMEOUT_MS = 30000;
 const HEALTH_RETRY_INTERVAL_MS = 800;
 
-/** 杀掉占用指定端口的进程 */
+/** Kill the process occupying the given port */
 function killPortOccupants(port: number): number[] {
   try {
     const out = execSync(`lsof -i :${port} -t -sTCP:LISTEN 2>/dev/null`, {
@@ -27,7 +27,7 @@ function killPortOccupants(port: number): number[] {
     }
     return pids;
   } catch {
-    // lsof 没找到占用者，正常返回
+    // lsof found no occupant; return normally
     return [];
   }
 }
@@ -61,7 +61,7 @@ function isRunning(): boolean {
     });
     req.on('error', () => {});
     req.end();
-    // 不阻塞等结果，仅做探测
+    // Do not block waiting for the result; just probe
     return true;
   } catch { return false; }
 }
@@ -72,7 +72,7 @@ export class WindsurfProxyManager {
   private onStatusChange?: (running: boolean, error?: string) => void;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private started = false;
-  // 重启退避：连续失败时延迟逐步加长，避免 EADDRINUSE / 启动脚本报错时的重启风暴
+  // Restart backoff: progressively longer delays on repeated failures, to avoid a restart storm on EADDRINUSE / startup-script errors
   private restartAttempts = 0;
   private static readonly MAX_RESTART_ATTEMPTS = 6;
 
@@ -89,7 +89,7 @@ export class WindsurfProxyManager {
     return this.proxyDir !== null;
   }
 
-  /** 健康检查（Promise 版本） */
+  /** Health check (Promise version) */
   async healthCheck(): Promise<{ ok: boolean; error?: string }> {
     return new Promise((resolve) => {
       const req = http.request({
@@ -116,23 +116,23 @@ export class WindsurfProxyManager {
     });
   }
 
-  /** 启动代理进程（如果尚未运行） */
+  /** Start the proxy process (if not already running) */
   async start(): Promise<{ ok: boolean; error?: string }> {
     if (this.started && this.child && !this.child.killed) {
-      // 已启动，检查是否存活
+      // Already started; check whether it is alive
       const health = await this.healthCheck();
       if (health.ok) return health;
-      // 进程在但没响应，杀掉重来
+      // Process exists but is unresponsive; kill and retry
       this.killChild();
     }
 
     if (!this.proxyDir) {
-      const err = 'Windsurf 反代目录未找到';
+      const err = 'Windsurf reverse-proxy directory not found';
       this.onStatusChange?.(false, err);
       return { ok: false, error: err };
     }
 
-    // 先检查是否已有进程在运行
+    // First check whether a process is already running
     const preCheck = await this.healthCheck();
     if (preCheck.ok) {
       this.started = true;
@@ -140,11 +140,11 @@ export class WindsurfProxyManager {
       return { ok: true };
     }
 
-    // health check 失败 → 端口可能被不健康的旧进程占用，杀掉再启动
+    // Health check failed -> the port may be occupied by an unhealthy old process; kill it then start
     const killed = killPortOccupants(WINDSURF_PROXY_PORT);
     if (killed.length > 0) {
       console.log(`[WindsurfProxy] Cleared ${killed.length} stale process(es) on port ${WINDSURF_PROXY_PORT}`);
-      // 等端口释放（杀进程后 OS 需要一点时间回收）
+      // Wait for the port to be released (the OS needs a moment to reclaim it after killing)
       await new Promise(r => setTimeout(r, 2000));
     }
 
@@ -157,7 +157,7 @@ export class WindsurfProxyManager {
       const distPath = path.join(cwd, 'dist', 'index.js');
 
       if (!fs.existsSync(distPath)) {
-        const err = 'Windsurf 反代未构建，请在反代目录运行: npm run build';
+        const err = 'Windsurf reverse-proxy is not built; run in the proxy directory: npm run build';
         this.onStatusChange?.(false, err);
         resolve({ ok: false, error: err });
         return;
@@ -165,7 +165,7 @@ export class WindsurfProxyManager {
 
       console.log('[WindsurfProxy] Starting:', distPath);
 
-      // 尝试用 pnpm start 或直接 node
+      // Try pnpm start, or run node directly
       const useNpm = fs.existsSync(path.join(cwd, 'node_modules', '.pnpm'));
       let child: ChildProcess;
 
@@ -199,8 +199,8 @@ export class WindsurfProxyManager {
         const wasRunning = this.child !== null;
         this.child = null;
         if (wasRunning && this.started) {
-          this.onStatusChange?.(false, `进程退出 (code ${code})`);
-          // 延迟重启
+          this.onStatusChange?.(false, `Process exited (code ${code})`);
+          // Restart after a delay
           this.scheduleRestart();
         }
       });
@@ -212,13 +212,13 @@ export class WindsurfProxyManager {
         this.scheduleRestart();
       });
 
-      // 等待代理就绪
+      // Wait for the proxy to be ready
       this.waitForReady().then((result) => {
         if (result) {
           this.onStatusChange?.(true);
           resolve({ ok: true });
         } else {
-          resolve({ ok: false, error: '代理启动超时' });
+          resolve({ ok: false, error: 'Proxy startup timed out' });
         }
       });
     });
@@ -242,7 +242,7 @@ export class WindsurfProxyManager {
     if (this.restartTimer) return;
     if (this.restartAttempts >= WindsurfProxyManager.MAX_RESTART_ATTEMPTS) {
       console.warn('[WindsurfProxy] Restart attempts exhausted, giving up');
-      this.onStatusChange?.(false, '反代重启次数耗尽，请检查日志');
+      this.onStatusChange?.(false, 'Reverse-proxy restart attempts exhausted; please check the logs');
       return;
     }
     // 5s, 15s, 60s, 120s, 300s, 600s
@@ -252,13 +252,13 @@ export class WindsurfProxyManager {
     console.log(`[WindsurfProxy] Restarting in ${delay}ms (attempt ${this.restartAttempts}/${WindsurfProxyManager.MAX_RESTART_ATTEMPTS})...`);
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
-      // 重启前清理端口占用，防止 EADDRINUSE 循环
+      // Clear port occupancy before restarting to prevent an EADDRINUSE loop
       killPortOccupants(WINDSURF_PROXY_PORT);
       this.start().catch(() => {});
     }, delay);
   }
 
-  /** 启动成功后调用，让退避计数归零 */
+  /** Called after a successful start to reset the backoff counter */
   private resetRestartBackoff(): void {
     this.restartAttempts = 0;
   }
@@ -274,7 +274,7 @@ export class WindsurfProxyManager {
     this.child = null;
   }
 
-  /** 应用退出时清理 */
+  /** Cleanup on app exit */
   destroy(): void {
     this.started = false;
     if (this.restartTimer) {

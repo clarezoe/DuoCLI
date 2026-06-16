@@ -1,47 +1,47 @@
 # Changelog
 
-## v1.1.0 — Devin 多账号管理 & 智能切号 (2026-06-05)
+## v1.1.0 — Devin multi-account management & smart account switching (2026-06-05)
 
-### 新增功能
+### New features
 
-#### Devin 账号管理器（侧边栏 "👤 Devin" 标签页）
-- **多账号管理**：添加/删除 Devin 账号，支持同时管理多个账号
-- **一键切换**：点击任一账号旁的"切换"按钮，自动登录并写入凭证
-- **配额查询**：显示每个账号的日/周配额余额（D/W 百分比）
-- **方案识别**：自动识别 Pro Trial / Pro / Free / Teams / Enterprise 方案
-- **状态监控**：绿/红/灰圆点标识账号状态（正常/异常/未登录）
-- 数据存储复用 `~/.session-sync-manager/accounts.json`，与 session-sync 工具互通
+#### Devin account manager (sidebar "👤 Devin" tab)
+- **Multi-account management**: add/remove Devin accounts and manage several at once
+- **One-click switch**: click the "Switch" button next to any account to log in automatically and write the credentials
+- **Quota query**: shows each account's daily/weekly quota balance (D/W percentages)
+- **Plan detection**: automatically detects Pro Trial / Pro / Free / Teams / Enterprise plans
+- **Status monitoring**: green/red/gray dots indicate account status (healthy/error/not logged in)
+- Data storage reuses `~/.session-sync-manager/accounts.json`, interoperable with the session-sync tool
 
-#### 智能错误检测 & 自动恢复（Devin 终端专属）
-- **硬限流自动切号**：检测到以下错误时，后台自动切号 + 发送"继续"恢复会话：
-  - `quota exhausted` / `usage is exhausted`（日/周额度用完）
-  - `overall message rate limit`（账号级硬限制）
-  - `Permission denied ... rate limit`（权限级限流）
-- **软限流自动等待**：检测到临时 `rate limit` 时，等待 8 秒后自动发送"继续"
-- **设备指纹旋转**：每次切号时自动轮换 `installation_id`，防止跨账号限流关联
-  - 轮换路径：`~/.local/share/devin/cli/installation_id` 和 `cli-next/installation_id`
-- **三重兜底保障**：`auth-cli.mjs` 内部旋转 → DuoCLI IPC 兜底旋转 → PTY 自动切号直接旋转
-- **智能冷却**：切换成功/失败均有冷却期，防止快速重试导致的资源浪费
+#### Smart error detection & auto-recovery (Devin terminals only)
+- **Auto-switch on hard rate limits**: when the following errors are detected, automatically switch accounts in the background and send "continue" to resume the session:
+  - `quota exhausted` / `usage is exhausted` (daily/weekly quota used up)
+  - `overall message rate limit` (account-level hard limit)
+  - `Permission denied ... rate limit` (permission-level rate limiting)
+- **Auto-wait on soft rate limits**: when a temporary `rate limit` is detected, wait 8 seconds and then automatically send "continue"
+- **Device fingerprint rotation**: rotate `installation_id` on each switch to avoid cross-account rate-limit correlation
+  - Rotation paths: `~/.local/share/devin/cli/installation_id` and `cli-next/installation_id`
+- **Triple-layer safety net**: internal rotation in `auth-cli.mjs` → DuoCLI IPC fallback rotation → direct rotation on PTY auto-switch
+- **Smart cooldown**: a cooldown applies on both successful and failed switches, preventing resource waste from rapid retries
 
-#### 会话恢复增强
-- 终端退出时自动捕获 `--resume` 参数，保存到已关闭会话列表
-- 侧边栏可查看已关闭会话，支持一键恢复上次会话
+#### Session resume improvements
+- Automatically capture the `--resume` flag when a terminal exits, saving it to the closed-session list
+- View closed sessions in the sidebar with one-click resume of the last session
 
-### 改进
+### Improvements
 
-- macOS Dock 启动时 PATH 不包含 `~/.local/bin` 的问题已修复，使用绝对路径调用 `session-sync`
-- 子进程管理优化：`stdio: 'ignore'` + `unref()` 防止 pipe 阻塞和资源泄漏
-- 切号失败时终端内有可见提示（`⚠️ [DuoCLI] 自动切号失败`），而非静默失败
-- 自动重试定时器纳入会话生命周期管理，销毁时自动清理
-- 代码去重：`rotateDevinInstallationId` 收敛到 pty-manager.ts 统一导出
+- Fixed an issue where the macOS Dock launch PATH didn't include `~/.local/bin`; now calls `session-sync` via an absolute path
+- Subprocess management improvements: `stdio: 'ignore'` + `unref()` to prevent pipe blocking and resource leaks
+- A visible terminal hint on switch failure (`⚠️ [DuoCLI] Auto account-switch failed`) instead of failing silently
+- Auto-retry timers are now part of the session lifecycle and are cleaned up automatically on destroy
+- Deduplication: `rotateDevinInstallationId` consolidated into a single export in pty-manager.ts
 
-### 技术细节
+### Technical details
 
-- 认证操作通过 `auth-cli.mjs` 子进程完成，复用 Windsurf/Codeium 的登录协议
-- 不存储明文密码在 DuoCLI 本地；密码仅通过 IPC 传递给子进程做一次性登录
-- 账号列表、配额信息通过直接读 `accounts.json` 快速获取，无需每次调子进程
+- Authentication operations run through the `auth-cli.mjs` subprocess, reusing the Windsurf/Codeium login protocol
+- No plaintext passwords are stored locally in DuoCLI; passwords are passed via IPC to the subprocess only for a one-time login
+- Account lists and quota info are fetched quickly by reading `accounts.json` directly, without invoking a subprocess each time
 
-### 已知局限
+### Known limitations
 
-- Devin 的 `sessions.db`（172MB）尚未在切号时清理，未来可考虑轮换
-- 仅支持 Devin CLI 账号，暂不支持 Windsurf/Cascade 账号的直接管理
+- Devin's `sessions.db` (172MB) is not yet cleaned up on switch; rotation may be considered in the future
+- Only Devin CLI accounts are supported; direct management of Windsurf/Cascade accounts is not yet available

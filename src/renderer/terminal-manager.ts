@@ -1,7 +1,7 @@
 import { Terminal, IBufferLine, ILinkProvider, ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
-// 终端配色方案
+// Terminal color schemes
 const THEMES: Record<string, any> = {
   'vscode-dark': {
     background: '#1e1e1e',
@@ -138,7 +138,7 @@ const THEMES: Record<string, any> = {
   },
 };
 
-// 配色对应的标识色（用于侧边栏圆点）
+// Accent color for each theme (used for the sidebar dots)
 const THEME_DOTS: Record<string, string> = {
   'vscode-dark': '#0078d4',
   'monokai': '#a6e22e',
@@ -148,21 +148,21 @@ const THEME_DOTS: Record<string, string> = {
   'nord': '#88c0d0',
 };
 
-// 文件路径正则
+// File path regexes
 const SOURCE_EXT_PATTERN = 'vue|ts|tsx|js|jsx|json|css|scss|less|html|md|yaml|yml|xml|svg|py|go|rs|java|kt|swift|c|cpp|h|hpp|sh|bash|zsh|toml|conf|txt|env|lock|config|nvue|wxml|wxss';
-// 0. 带前缀且可能包含空格的源码路径: ~/My Apps/a.md, /Users/me/My App/a.ts, ./My App/a.ts
+// 0. Prefixed source paths that may contain spaces: ~/My Apps/a.md, /Users/me/My App/a.ts, ./My App/a.ts
 const PREFIXED_SOURCE_PATH_RE = new RegExp(
   `(?:~\\/|\\/|\\.{1,2}\\/|@\\/?)` +
     `[^\\n\\r<>"'\`|]*?` +
     `\\.(?:${SOURCE_EXT_PATTERN})(?::\\d+(?::\\d+)?)?`,
   'g',
 );
-// 1. 带目录的路径: /abs/path, rel/path, @alias/path, ./rel/path
+// 1. Paths with a directory: /abs/path, rel/path, @alias/path, ./rel/path
 const PATH_RE = /(?:@\/?|\.\/|\/)?(?:[\w.\-\u4e00-\u9fff]+\/)+[\w.\-\u4e00-\u9fff]*(?:\.[\w]+)?/g;
-// 2. 单文件名（无目录，有源码扩展名）
+// 2. Single filename (no directory, with a source extension)
 const SINGLE_FILE_RE = new RegExp(`(?<![\\/\\w.\\-])[\\w.\\-\\u4e00-\\u9fff]+\\.(?:${SOURCE_EXT_PATTERN})(?![\\w.\\-])`, 'g');
 
-// 常见源码扩展名
+// Common source extensions
 const SOURCE_EXTS = new Set([
   'vue', 'ts', 'tsx', 'js', 'jsx', 'json', 'css', 'scss', 'less', 'html',
   'md', 'yaml', 'yml', 'xml', 'svg', 'py', 'go', 'rs', 'java', 'kt',
@@ -170,7 +170,7 @@ const SOURCE_EXTS = new Set([
   'txt', 'env', 'lock', 'config', 'nvue', 'wxml', 'wxss',
 ]);
 
-// URL 正则
+// URL regex
 const URL_RE = /https?:\/\/[^\s<>"']+/g;
 
 function stripPathSuffix(filePath: string): string {
@@ -183,7 +183,7 @@ function cleanPathMatch(filePath: string): string {
   return stripPathSuffix(filePath).replace(/\\ /g, ' ');
 }
 
-// 文件路径链接检测器
+// File-path link detector
 class FilePathLinkProvider implements ILinkProvider {
   private onClickCallback: (resolvedPath: string) => void;
   private getCwd: () => string;
@@ -200,10 +200,10 @@ class FilePathLinkProvider implements ILinkProvider {
     const line = buffer.getLine(y - 1);
     if (!line) { callback(undefined); return; }
 
-    // 跳过续行（由起始行统一处理整个续行序列）
+    // Skip wrapped continuation lines (the whole wrapped sequence is handled from its starting line)
     if (line.isWrapped) { callback(undefined); return; }
 
-    // 收集起始行及后续所有续行
+    // Collect the starting line and all subsequent wrapped lines
     const bufferLines: IBufferLine[] = [line];
     let nextY = y;
     while (true) {
@@ -216,7 +216,7 @@ class FilePathLinkProvider implements ILinkProvider {
       }
     }
 
-    // 拼接文本，记录每个字符对应的 buffer 行号和 cell 列号
+    // Concatenate the text, recording each character's buffer line index and cell column
     let text = '';
     const posLine: number[] = [];
     const posCell: number[] = [];
@@ -235,7 +235,7 @@ class FilePathLinkProvider implements ILinkProvider {
           }
           text += chars;
         } else if (width === 0) {
-          // 宽字符后续 cell
+          // Trailing cell of a wide character
         } else {
           posLine.push(bufLineIdx);
           posCell.push(i);
@@ -247,7 +247,7 @@ class FilePathLinkProvider implements ILinkProvider {
     const cwd = this.getCwd();
     const matched: Array<{ filePath: string; display: string; index: number; length: number; isUrl: boolean }> = [];
 
-    // 1. 匹配 URL
+    // 1. Match URLs
     let match: RegExpExecArray | null;
     URL_RE.lastIndex = 0;
     while ((match = URL_RE.exec(text)) !== null) {
@@ -258,7 +258,7 @@ class FilePathLinkProvider implements ILinkProvider {
       matched.push({ filePath: url, display: url, index: match.index, length: url.length, isUrl: true });
     }
 
-    // 2. 匹配带前缀且可能包含空格的路径
+    // 2. Match prefixed paths that may contain spaces
     PREFIXED_SOURCE_PATH_RE.lastIndex = 0;
     while ((match = PREFIXED_SOURCE_PATH_RE.exec(text)) !== null) {
       const rawPath = stripPathSuffix(match[0]);
@@ -270,7 +270,7 @@ class FilePathLinkProvider implements ILinkProvider {
       matched.push({ filePath: fp, display: fp, index: match.index, length: rawPath.length, isUrl: false });
     }
 
-    // 3. 匹配带目录的路径
+    // 3. Match paths with a directory
     PATH_RE.lastIndex = 0;
     while ((match = PATH_RE.exec(text)) !== null) {
       const rawPath = stripPathSuffix(match[0]);
@@ -287,7 +287,7 @@ class FilePathLinkProvider implements ILinkProvider {
       matched.push({ filePath: fp, display: fp, index: match.index, length: rawPath.length, isUrl: false });
     }
 
-    // 4. 匹配单文件名
+    // 4. Match single filenames
     SINGLE_FILE_RE.lastIndex = 0;
     while ((match = SINGLE_FILE_RE.exec(text)) !== null) {
       const fp = match[0];
@@ -296,7 +296,7 @@ class FilePathLinkProvider implements ILinkProvider {
       matched.push({ filePath: fp, display: fp, index: match.index, length: fp.length, isUrl: false });
     }
 
-    // 生成链接
+    // Build links
     const links: ILink[] = [];
     for (const m of matched) {
       const si = m.index;
@@ -310,7 +310,7 @@ class FilePathLinkProvider implements ILinkProvider {
             end: { x: posCell[ei] + 1, y: posLine[ei] + 1 },
           },
           text: m.display,
-          activate: () => { (window as any).duocli?.openUrl?.(m.filePath); },
+          activate: () => { (window as any).posse?.openUrl?.(m.filePath); },
         });
       } else {
         let resolved = m.filePath;
@@ -318,7 +318,7 @@ class FilePathLinkProvider implements ILinkProvider {
         if (resolved.startsWith('~/')) {
           // main process expands this to the current user's home directory.
         } else if (resolved.startsWith('/')) {
-          // 绝对路径
+          // Absolute path
         } else if (resolved.startsWith('@/') || resolved.startsWith('@')) {
           resolved = cwd + '/' + resolved.replace(/^@\/?/, '');
         } else if (resolved.startsWith('./')) {
@@ -341,9 +341,9 @@ class FilePathLinkProvider implements ILinkProvider {
   }
 }
 
-// 终端右键菜单（文件链接上右键）
+// Terminal context menu (right-click on a file link)
 function showTermContextMenu(x: number, y: number, fileName: string, openFn: () => void): void {
-  // 移除已有菜单
+  // Remove any existing menu
   document.querySelectorAll('.term-context-menu').forEach(el => el.remove());
 
   const menu = document.createElement('div');
@@ -353,22 +353,22 @@ function showTermContextMenu(x: number, y: number, fileName: string, openFn: () 
 
   const openItem = document.createElement('div');
   openItem.className = 'term-context-item';
-  openItem.textContent = `打开 ${fileName.split('/').pop() || fileName}`;
+  openItem.textContent = `Open ${fileName.split('/').pop() || fileName}`;
   openItem.addEventListener('click', () => { menu.remove(); openFn(); });
 
   const editorItem = document.createElement('div');
   editorItem.className = 'term-context-item';
-  editorItem.textContent = '更换编辑器...';
+  editorItem.textContent = 'Change editor...';
   editorItem.addEventListener('click', async () => {
     menu.remove();
-    await (window as any).duocli.filewatcherSelectEditor();
+    await (window as any).posse.filewatcherSelectEditor();
   });
 
   menu.appendChild(openItem);
   menu.appendChild(editorItem);
   document.body.appendChild(menu);
 
-  // 点击其他地方关闭
+  // Close when clicking elsewhere
   const close = () => { menu.remove(); document.removeEventListener('click', close); };
   setTimeout(() => document.addEventListener('click', close), 0);
 }
@@ -399,13 +399,13 @@ export class TerminalManager {
     });
     this.resizeObserver.observe(terminalArea);
 
-    // 窗口重新获得焦点时，重新 fit 并同步 pty 尺寸
-    // 解决手机端远程控制后桌面端终端尺寸不同步的问题
+    // When the window regains focus, re-fit and sync the pty size
+    // Fixes desktop terminal size getting out of sync after mobile remote control
     window.addEventListener('focus', () => {
       this.fitActive();
     });
 
-    // 定时检查容器尺寸变化（兜底：ResizeObserver 可能漏掉某些布局变化）
+    // Periodically check for container size changes (fallback: ResizeObserver may miss some layout changes)
     this.fitCheckTimer = setInterval(() => {
       this.fitIfSizeChanged();
     }, 3000);
@@ -433,25 +433,25 @@ export class TerminalManager {
     terminal.open(container);
     terminal.onData((data) => onData(data));
 
-    // 注册文件路径链接检测
+    // Register file-path link detection
     const linkProvider = new FilePathLinkProvider(
       terminal,
       () => cwd,
       (filePath) => {
-        (window as any).duocli.filewatcherOpen(filePath).then((result: { ok?: boolean; error?: string } | undefined) => {
+        (window as any).posse.filewatcherOpen(filePath).then((result: { ok?: boolean; error?: string } | undefined) => {
           if (result && result.ok === false) {
-            console.error('打开编辑器失败:', result.error);
+            console.error('Failed to open editor:', result.error);
           }
         }).catch((error: unknown) => {
-          console.error('打开编辑器失败:', error);
+          console.error('Failed to open editor:', error);
         });
       },
     );
     terminal.registerLinkProvider(linkProvider);
 
-    // 右键菜单：在文件链接上右键可更换编辑器
+    // Context menu: right-click on a file link to change the editor
     container.addEventListener('contextmenu', (e: MouseEvent) => {
-      // 获取鼠标所在行
+      // Get the row under the cursor
       const cellHeight = terminal.element?.querySelector('.xterm-rows')?.children[0]?.getBoundingClientRect().height || 17;
       const viewportEl = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null;
       const rowsEl = terminal.element?.querySelector('.xterm-rows') as HTMLElement | null;
@@ -461,7 +461,7 @@ export class TerminalManager {
       const row = Math.floor(relY / cellHeight);
       const bufferY = row + terminal.buffer.active.viewportY + 1;
 
-      // 用 linkProvider 检测该行是否有链接
+      // Use linkProvider to check whether this row has any links
       linkProvider.provideLinks(bufferY, (links) => {
         if (!links || links.length === 0) return;
         e.preventDefault();
@@ -471,42 +471,42 @@ export class TerminalManager {
       });
     });
 
-    // 拦截粘贴事件，检测剪贴板图片或文件
+    // Intercept paste events to detect clipboard images or files
     container.addEventListener('paste', async (e: ClipboardEvent) => {
       if (!e.clipboardData) return;
       const hasImage = Array.from(e.clipboardData.items).some(
         (item) => item.type.startsWith('image/')
       );
-      // 优先处理图片
+      // Handle images first
       if (hasImage) {
         e.preventDefault();
         e.stopPropagation();
         try {
-          const filePath = await (window as any).duocli.clipboardSaveImage();
+          const filePath = await (window as any).posse.clipboardSaveImage();
           if (filePath) {
             onData(filePath);
           }
-        } catch { /* 静默失败 */ }
+        } catch { /* fail silently */ }
         return;
       }
-      // 尝试处理文件（从剪贴板获取文件路径）
+      // Try to handle files (get the file path from the clipboard)
       try {
-        const filePath = await (window as any).duocli.clipboardGetFilePath();
+        const filePath = await (window as any).posse.clipboardGetFilePath();
         if (filePath) {
           e.preventDefault();
           e.stopPropagation();
-          // 对路径进行 shell 转义
+          // Shell-escape the path
           const escapedPath = filePath.includes("'") ? `"${filePath.replace(/"/g, '\\"')}"` : `'${filePath}'`;
           onData(escapedPath + ' ');
         }
-      } catch { /* 静默失败 */ }
+      } catch { /* fail silently */ }
     }, true);
 
-    // 浮动"滚到底部"按钮
+    // Floating "scroll to bottom" button
     const scrollBtn = document.createElement('button');
     scrollBtn.className = 'scroll-bottom-btn';
     scrollBtn.textContent = '⬇';
-    scrollBtn.title = '滚到底部';
+    scrollBtn.title = 'Scroll to bottom';
     scrollBtn.style.display = 'none';
     container.appendChild(scrollBtn);
 
@@ -515,7 +515,7 @@ export class TerminalManager {
       scrollBtn.style.display = 'none';
     });
 
-    // 监听滚动：不在底部时显示按钮
+    // Watch scrolling: show the button when not at the bottom
     const checkScroll = () => {
       const buf = terminal.buffer.active;
       const atBottom = buf.viewportY >= buf.baseY;
@@ -524,7 +524,7 @@ export class TerminalManager {
     terminal.onScroll(() => checkScroll());
     terminal.onWriteParsed(() => checkScroll());
 
-    // 有些情况下滚轮往下滚会停在接近底部但不贴底，向下滚时自动吸附到最新输出
+    // Sometimes wheel-scrolling down stops near, but not at, the bottom; snap to the latest output when scrolling down
     const viewport = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null;
     viewport?.addEventListener('wheel', (e: WheelEvent) => {
       if (e.deltaY <= 0) return;
@@ -543,26 +543,26 @@ export class TerminalManager {
     this.instances.set(id, { id, terminal, fitAddon, container, themeId, pendingInputScroll: false });
     this.switchTo(id);
 
-    // 创建终端后默认停在底部，避免交互式 CLI 初始化输出后停在历史顶部。
+    // After creating the terminal, default to the bottom so interactive CLIs don't leave you at the top of history after init output.
     setTimeout(() => {
       terminal.scrollToBottom();
     }, 100);
   }
 
   switchTo(id: string): void {
-    // 隐藏所有
+    // Hide all
     this.instances.forEach((inst) => {
       inst.container.classList.remove('active');
     });
-    // 显示目标
+    // Show the target
     const target = this.instances.get(id);
     if (!target) return;
     target.container.classList.add('active');
     this.activeId = id;
-    // 延迟fit确保DOM更新
+    // Delay fit to ensure the DOM has updated
     setTimeout(() => {
-      // 50ms 内用户可能已关闭这个终端 → instance 不在 map 里也不在 DOM 里
-      // 直接 fit 会抛 "ITerminalDimensions" 异常，再用 cols/rows 也是 0
+      // Within 50ms the user may have closed this terminal → the instance is no longer in the map or DOM
+      // Calling fit directly would throw an "ITerminalDimensions" error, and cols/rows would be 0
       const stillActive = this.instances.get(id);
       if (!stillActive || stillActive !== target) return;
       try {
@@ -580,21 +580,21 @@ export class TerminalManager {
   write(id: string, data: string): void {
     const inst = this.instances.get(id);
     if (!inst) return;
-    // 记录写入前是否在底部（使用容差避免浮点/行高差异误判）
+    // Record whether we were at the bottom before writing (use a tolerance to avoid float/line-height misjudgment)
     const buf = inst.terminal.buffer.active;
     const wasAtBottom = buf.viewportY >= buf.baseY - 2;
     inst.terminal.write(data, () => {
-      // 写入后双重判断：写入前在底部 或 pendingInputScroll → 滚到底
-      // 第二个条件兜底：若 fit() 在两次 write 之间改变了 viewport，
-      // wasAtBottom 仍记录着上一次真正的用户位置
+      // After writing, double-check: at the bottom before writing, or pendingInputScroll → scroll to bottom
+      // The second condition is a fallback: if fit() changed the viewport between two writes,
+      // wasAtBottom still records the user's last real position
       const currentBuf = inst.terminal.buffer.active;
       const stillAtBottom = currentBuf.viewportY >= currentBuf.baseY - 2;
       if (wasAtBottom || inst.pendingInputScroll) {
         inst.terminal.scrollToBottom();
         inst.pendingInputScroll = false;
       } else if (stillAtBottom && currentBuf.baseY > 0) {
-        // 如果用户之前不在底部，但写完后恰好在底部了（说明内容自动滚到底了），
-        // 且 buffer 已有内容，则保持在底部（正常追屏行为）
+        // If the user wasn't at the bottom before but is right after writing (content auto-scrolled to the bottom),
+        // and the buffer already has content, stay at the bottom (normal follow-the-output behavior)
         inst.terminal.scrollToBottom();
       }
     });
@@ -614,7 +614,7 @@ export class TerminalManager {
     inst.container.remove();
     this.instances.delete(id);
 
-    // 切换到其他终端
+    // Switch to another terminal
     if (this.activeId === id) {
       const remaining = Array.from(this.instances.keys());
       if (remaining.length > 0) {
@@ -630,15 +630,15 @@ export class TerminalManager {
     if (!this.activeId) return;
     const inst = this.instances.get(this.activeId);
     if (inst) {
-      // fit() 会调用 terminal.resize()，可能改变行列数导致 viewport 意外移位。
-      // 记录 fit 前是否在底部，fit 后恢复，避免跳到 buffer 顶部。
+      // fit() calls terminal.resize(), which can change the row/column count and shift the viewport unexpectedly.
+      // Record whether we were at the bottom before fit, then restore after, to avoid jumping to the top of the buffer.
       const buf = inst.terminal.buffer.active;
       const wasAtBottom = buf.baseY > 0 && buf.viewportY >= buf.baseY - 2;
       inst.fitAddon.fit();
       if (wasAtBottom) {
         inst.terminal.scrollToBottom();
       }
-      // 记录当前容器尺寸，供定时检查使用
+      // Record the current container size for the periodic check
       const rect = inst.container.getBoundingClientRect();
       this.lastFitSize = { w: rect.width, h: rect.height };
       if (this.onResize) {
@@ -648,7 +648,7 @@ export class TerminalManager {
     }
   }
 
-  // 定时兜底：检查容器尺寸是否变化，变了就重新 fit
+  // Periodic fallback: check whether the container size changed, and re-fit if so
   private fitIfSizeChanged(): void {
     if (!this.activeId) return;
     const inst = this.instances.get(this.activeId);

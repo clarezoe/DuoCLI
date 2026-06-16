@@ -1,54 +1,54 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DuoCLI</title>
+  <title>Posse</title>
   <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*;">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- 新建终端弹窗 -->
+  <!-- New terminal dialog -->
   <div id="new-session-overlay" class="new-session-overlay">
     <div id="new-session-dialog" class="new-session-dialog">
       <div class="new-session-header">
-        <h3>新建终端</h3>
-        <button id="new-session-close" class="new-session-close" title="关闭">&times;</button>
+        <h3>New Terminal</h3>
+        <button id="new-session-close" class="new-session-close" title="Close">&times;</button>
       </div>
 
       <div class="new-session-body">
-        <label>工作目录</label>
+        <label>Working Directory</label>
         <div class="new-session-row">
           <div id="cwd-wrapper">
-            <input id="cwd-input" type="text" placeholder="输入路径或点击浏览..." />
-            <button id="cwd-recent-btn" class="cwd-recent-toggle" title="最近目录">&#9660;</button>
+            <input id="cwd-input" type="text" placeholder="Enter a path or click Browse..." />
+            <button id="cwd-recent-btn" class="cwd-recent-toggle" title="Recent directories">&#9660;</button>
             <div id="cwd-recent-dropdown" class="cwd-recent-dropdown"></div>
           </div>
-          <button id="cwd-browse-btn" class="toolbar-btn">浏览</button>
-          <button id="cwd-open-btn" class="toolbar-icon-btn" title="在 Finder 中打开">&#128193;</button>
+          <button id="cwd-browse-btn" class="toolbar-btn">Browse</button>
+          <button id="cwd-open-btn" class="toolbar-icon-btn" title="Reveal in Finder">&#128193;</button>
         </div>
 
         <label>CLI</label>
         <div class="new-session-row">
           <select id="preset-select" class="toolbar-select">
-            <option value="">空终端</option>
-            <option value="claude --dangerously-skip-permissions">Claude (全自动)</option>
-            <option value="codex -c sandbox_mode=&quot;danger-full-access&quot; -c approval=&quot;never&quot; -c network=&quot;enabled&quot;">Codex (全自动)</option>
-            <option value="copilot --allow-all --autopilot">Copilot (全自动)</option>
+            <option value="">Empty Terminal</option>
+            <option value="claude --dangerously-skip-permissions">Claude (auto)</option>
+            <option value="codex -c sandbox_mode=&quot;danger-full-access&quot; -c approval=&quot;never&quot; -c network=&quot;enabled&quot;">Codex (auto)</option>
+            <option value="copilot --allow-all --autopilot">Copilot (auto)</option>
           </select>
-          <button id="preset-add-btn" class="toolbar-icon-btn" title="新建自定义 CLI 预设">+</button>
-          <button id="preset-manage-btn" class="toolbar-icon-btn" title="管理自定义预设">&#9881;</button>
+          <button id="preset-add-btn" class="toolbar-icon-btn" title="New custom CLI preset">+</button>
+          <button id="preset-manage-btn" class="toolbar-icon-btn" title="Manage custom presets">&#9881;</button>
         </div>
 
-        <label>配色</label>
+        <label>Color Scheme</label>
         <div class="new-session-row">
           <div id="theme-select" class="custom-select">
             <div class="custom-select-display" id="theme-display">
               <span class="theme-dot" style="background:#0078d4"></span>VS Code Dark
             </div>
             <div class="custom-select-dropdown" id="theme-dropdown">
-              <div class="custom-select-option" data-value="auto"><span class="theme-dot" style="background:conic-gradient(#e06c75,#e5c07b,#98c379,#56b6c2,#61afef,#c678dd,#e06c75)"></span>自动配色</div>
+              <div class="custom-select-option" data-value="auto"><span class="theme-dot" style="background:conic-gradient(#e06c75,#e5c07b,#98c379,#56b6c2,#61afef,#c678dd,#e06c75)"></span>Auto Color</div>
               <div class="custom-select-option" data-value="vscode-dark"><span class="theme-dot" style="background:#0078d4"></span>VS Code Dark</div>
               <div class="custom-select-option" data-value="monokai"><span class="theme-dot" style="background:#a6e22e"></span>Monokai</div>
               <div class="custom-select-option" data-value="dracula"><span class="theme-dot" style="background:#bd93f9"></span>Dracula</div>
@@ -61,140 +61,141 @@
       </div>
 
       <div class="confirm-buttons">
-        <button id="new-session-cancel" class="btn-cancel">取消</button>
-        <button id="new-session-create" class="toolbar-btn">创建终端</button>
+        <button id="new-session-cancel" class="btn-cancel">Cancel</button>
+        <button id="new-session-create" class="toolbar-btn">Create Terminal</button>
       </div>
     </div>
   </div>
 
-  <!-- 循环配置弹窗 -->
+  <!-- Loop config dialog -->
   <div id="auto-continue-overlay" class="new-session-overlay">
     <div class="new-session-dialog" style="width: min(400px, calc(100vw - 40px));">
       <div class="new-session-header">
-        <h3>循环配置</h3>
-        <button id="auto-continue-dialog-close" class="new-session-close" title="关闭">&times;</button>
+        <h3>Loop Settings</h3>
+        <button id="auto-continue-dialog-close" class="new-session-close" title="Close">&times;</button>
       </div>
       <div class="new-session-body">
-        <label>命令列表（每行一条，按顺序发送）</label>
-        <textarea id="auto-continue-message" rows="4" placeholder="每行一条命令，按顺序发送" style="width:100%;resize:vertical;padding:6px 8px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-size:12px;outline:none;font-family:inherit;"></textarea>
-        <label>循环间隔（分钟）</label>
-        <input id="auto-continue-interval" type="number" min="1" placeholder="分钟" />
-        <label>命令间隔（秒）</label>
-        <input id="auto-continue-command-interval" type="number" min="0" value="2" placeholder="秒" />
+        <label>Command list (one per line, sent in order)</label>
+        <textarea id="auto-continue-message" rows="4" placeholder="One command per line, sent in order" style="width:100%;resize:vertical;padding:6px 8px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-size:12px;outline:none;font-family:inherit;"></textarea>
+        <label>Loop interval (minutes)</label>
+        <input id="auto-continue-interval" type="number" min="1" placeholder="minutes" />
+        <label>Command interval (seconds)</label>
+        <input id="auto-continue-command-interval" type="number" min="0" value="2" placeholder="seconds" />
         <div style="margin-top: 8px;">
           <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
             <input id="auto-continue-auto-agree" type="checkbox" checked />
-            开启自动同意（权限提示自动确认）
+            Enable auto-approve (auto-confirm permission prompts)
           </label>
         </div>
         <div id="auto-agree-delay-row" style="margin-top: 6px;">
-          <label>自动同意延后时间（秒）</label>
-          <input id="auto-continue-agree-delay" type="number" min="0" value="5" placeholder="秒" />
+          <label>Auto-approve delay (seconds)</label>
+          <input id="auto-continue-agree-delay" type="number" min="0" value="5" placeholder="seconds" />
         </div>
         <div style="margin-top: 8px;">
-          <label>发送延迟（秒）<span style="font-size:10px;color:#888;">— 文字写入后等待多久再发送回车</span></label>
-          <input id="auto-continue-send-delay" type="number" min="0" value="2" placeholder="秒" />
+          <label>Send delay (seconds)<span style="font-size:10px;color:#888;">— how long to wait after typing before sending Enter</span></label>
+          <input id="auto-continue-send-delay" type="number" min="0" value="2" placeholder="seconds" />
         </div>
         <div style="margin-top: 8px;">
-          <label>最大持续时间（分钟）<span style="font-size:10px;color:#888;">— 超过后自动关闭催工，0 表示不限制</span></label>
-          <input id="auto-continue-max-duration" type="number" min="0" value="0" placeholder="分钟（0=不限制）" />
+          <label>Max duration (minutes)<span style="font-size:10px;color:#888;">— auto-stop the loop after this time; 0 means no limit</span></label>
+          <input id="auto-continue-max-duration" type="number" min="0" value="0" placeholder="minutes (0=no limit)" />
         </div>
       </div>
       <div class="confirm-buttons" style="margin-top: 12px;">
-        <button id="auto-continue-cancel" class="btn-cancel">取消</button>
-        <button id="auto-continue-stop" class="btn-close-confirm" style="display:none;">关闭循环</button>
-        <button id="auto-continue-save" class="toolbar-btn">保存并开启</button>
+        <button id="auto-continue-cancel" class="btn-cancel">Cancel</button>
+        <button id="auto-continue-stop" class="btn-close-confirm" style="display:none;">Stop Loop</button>
+        <button id="auto-continue-save" class="toolbar-btn">Save and Start</button>
       </div>
     </div>
   </div>
 
-  <!-- 主体 -->
+  <!-- Main body -->
   <div id="main">
-    <!-- 左侧目录树收起按钮 -->
-    <div id="file-tree-toggle" class="panel-toggle" title="收起/展开目录树">&#9664;</div>
+    <!-- Left file-tree collapse button -->
+    <div id="file-tree-toggle" class="panel-toggle" title="Collapse/expand file tree">&#9664;</div>
 
     <div id="file-tree-panel">
       <div id="file-tree-header">
-        <button id="file-tree-open-btn" class="toolbar-icon-btn" title="在 Finder 中打开">&#128193;</button>
-        <span id="file-tree-path">目录</span>
-        <button id="file-tree-refresh-btn" class="toolbar-icon-btn" title="刷新目录">&#8635;</button>
+        <button id="file-tree-open-btn" class="toolbar-icon-btn" title="Reveal in Finder">&#128193;</button>
+        <button id="file-tree-pick-btn" class="toolbar-icon-btn" title="Switch directory">&#128194;</button>
+        <span id="file-tree-path">Directory</span>
+        <button id="file-tree-refresh-btn" class="toolbar-icon-btn" title="Refresh directory">&#8635;</button>
       </div>
       <div id="file-tree-list">
-        <div class="file-tree-empty">选择会话后显示当前目录</div>
+        <div class="file-tree-empty">Select a session to show the current directory</div>
       </div>
     </div>
 
-    <!-- 左侧拖拽条 -->
+    <!-- Left resizer -->
     <div id="file-tree-resizer" class="resizer"></div>
 
     <div id="terminal-area">
       <div id="terminal-content">
-        <div id="empty-state">选择工作目录后点击「新建终端」开始</div>
+        <div id="empty-state">Select a working directory, then click "New Terminal" to start</div>
       </div>
-      <!-- 文件预览面板（只读，覆盖在终端上方） -->
+      <!-- File preview panel (read-only, overlays the terminal) -->
       <div id="file-preview-panel" hidden>
         <div id="file-preview-header">
-          <span id="file-preview-name" class="file-preview-name">文件预览</span>
+          <span id="file-preview-name" class="file-preview-name">File Preview</span>
           <span id="file-preview-meta" class="file-preview-meta"></span>
-          <button id="file-preview-external" class="toolbar-icon-btn" title="在外部编辑器打开">&#8599;</button>
-          <button id="file-preview-close" class="toolbar-icon-btn" title="关闭预览">&times;</button>
+          <button id="file-preview-external" class="toolbar-icon-btn" title="Open in external editor">&#8599;</button>
+          <button id="file-preview-close" class="toolbar-icon-btn" title="Close preview">&times;</button>
         </div>
         <div id="file-preview-body"></div>
       </div>
       <div id="chat-content" style="display:none;">
         <div id="chat-empty-state" class="chat-empty-state">
-          <p>选择聊天会话或点击「新建聊天」开始</p>
+          <p>Select a chat session or click "New Chat" to start</p>
         </div>
       </div>
       <div id="file-statusbar">
         <span id="file-statusbar-icon">&#9998;</span>
         <div id="file-statusbar-files">
-          <span class="file-statusbar-placeholder">等待文件变化...</span>
+          <span class="file-statusbar-placeholder">Waiting for file changes...</span>
         </div>
       </div>
     </div>
 
-    <!-- 右侧拖拽条 -->
+    <!-- Right resizer -->
     <div id="sidebar-resizer" class="resizer"></div>
 
-    <!-- 右侧边栏收起按钮 -->
-    <div id="sidebar-toggle" class="panel-toggle" title="收起/展开会话列表">&#9654;</div>
+    <!-- Right sidebar collapse button -->
+    <div id="sidebar-toggle" class="panel-toggle" title="Collapse/expand session list">&#9654;</div>
 
     <div id="sidebar">
       <div id="sidebar-topbar">
-        <button id="toolbar-new-btn" class="toolbar-btn">+ 新建终端</button>
-        <button id="toolbar-terminal-client-btn" class="toolbar-btn secondary">独立终端</button>
+        <button id="toolbar-new-btn" class="toolbar-btn">+ New Terminal</button>
+        <button id="toolbar-terminal-client-btn" class="toolbar-btn secondary">Standalone Terminal</button>
       </div>
-      <!-- 远程服务器连接信息 -->
+      <!-- Remote server connection info -->
       <div id="remote-server-info" class="remote-server-info" style="display: none;">
-        <div class="remote-info-title">手机访问</div>
+        <div class="remote-info-title">Mobile Access</div>
         <div class="remote-info-url"></div>
         <div class="remote-info-token"></div>
       </div>
       <div id="sidebar-tabs">
-        <button class="sidebar-tab active" data-tab="sessions">会话</button>
+        <button class="sidebar-tab active" data-tab="sessions">Sessions</button>
         <button class="sidebar-tab" data-tab="ai-config">&#128295; AI</button>
         <button class="sidebar-tab" data-tab="devin-accounts">&#128100; Devin</button>
       </div>
 
-      <!-- 会话 Tab -->
+      <!-- Sessions Tab -->
       <div id="tab-sessions" class="tab-content active">
         <div id="session-group-toggle">
-          <span class="group-toggle-label">分组</span>
-          <button id="group-by-agent" class="group-toggle-btn" data-mode="agent">按 Agent</button>
-          <button id="group-by-folder" class="group-toggle-btn" data-mode="folder">按目录</button>
+          <span class="group-toggle-label">Group</span>
+          <button id="group-by-agent" class="group-toggle-btn" data-mode="agent">By Agent</button>
+          <button id="group-by-folder" class="group-toggle-btn" data-mode="folder">By Folder</button>
         </div>
         <div id="session-list"></div>
       </div>
 
-      <!-- AI 配置 Tab -->
+      <!-- AI Config Tab -->
       <div id="tab-ai-config" class="tab-content">
         <div id="ai-config-form">
           <div class="ai-form-group">
-            <label class="ai-form-label">API 格式</label>
+            <label class="ai-form-label">API Format</label>
             <select id="ai-format-select" class="ai-form-input">
               <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI 兼容</option>
+              <option value="openai">OpenAI Compatible</option>
               <option value="gemini">Gemini</option>
               <option value="ollama">Ollama</option>
             </select>
@@ -206,52 +207,51 @@
           <div class="ai-form-group">
             <label class="ai-form-label">API Key</label>
             <div class="ai-key-row">
-              <input id="ai-apikey-input" class="ai-form-input" type="password" placeholder="输入 API Key..." />
-              <button id="ai-key-toggle" class="ai-key-toggle-btn" title="显示/隐藏">&#128065;</button>
+              <input id="ai-apikey-input" class="ai-form-input" type="password" placeholder="Enter API Key..." />
+              <button id="ai-key-toggle" class="ai-key-toggle-btn" title="Show/hide">&#128065;</button>
             </div>
           </div>
           <div class="ai-form-group">
-            <label class="ai-form-label">模型</label>
+            <label class="ai-form-label">Model</label>
             <input id="ai-model-input" class="ai-form-input" type="text" placeholder="claude-3-5-haiku-20241022" />
           </div>
         </div>
         <div id="ai-config-actions">
-          <button id="ai-test-btn" class="toolbar-btn ai-btn">测试</button>
-          <button id="ai-apply-btn" class="toolbar-btn ai-btn ai-apply-btn">保存</button>
+          <button id="ai-test-btn" class="toolbar-btn ai-btn">Test</button>
+          <button id="ai-apply-btn" class="toolbar-btn ai-btn ai-apply-btn">Save</button>
         </div>
       </div>
 
-      <!-- Devin 账号 Tab -->
+      <!-- Devin Accounts Tab -->
       <div id="tab-devin-accounts" class="tab-content">
         <div id="devin-accounts-header">
-          <span id="devin-current-label" class="devin-current-label">当前: --</span>
-          <button id="devin-refresh-btn" class="devin-header-btn" title="刷新">&#8635;</button>
-          <button id="devin-quota-btn" class="devin-header-btn" title="查询配额">配额</button>
-          <button id="devin-quota-all-btn" class="devin-header-btn devin-quota-all-btn" title="刷新全部额度">刷新全部额度</button>
+          <span id="devin-current-label" class="devin-current-label">Current: --</span>
+          <button id="devin-refresh-btn" class="devin-header-btn" title="Refresh">&#8635;</button>
+          <button id="devin-quota-btn" class="devin-header-btn" title="Check quota">Quota</button>
+          <button id="devin-quota-all-btn" class="devin-header-btn devin-quota-all-btn" title="Refresh all quotas">Refresh All Quotas</button>
         </div>
         <div id="devin-accounts-list" class="devin-accounts-list">
-          <div class="devin-accounts-empty">加载中...</div>
+          <div class="devin-accounts-empty">Loading...</div>
         </div>
         <div id="devin-accounts-add" class="devin-accounts-add">
-          <input id="devin-add-email" class="ai-form-input" type="text" placeholder="邮箱" />
-          <input id="devin-add-password" class="ai-form-input" type="password" placeholder="密码" />
-          <button id="devin-add-btn" class="toolbar-btn devin-btn">添加账号</button>
+          <input id="devin-add-email" class="ai-form-input" type="text" placeholder="Email" />
+          <input id="devin-add-password" class="ai-form-input" type="password" placeholder="Password" />
+          <button id="devin-add-btn" class="toolbar-btn devin-btn">Add Account</button>
           <div class="devin-batch-separator">
-            <span class="devin-batch-label">批量导入</span>
-            <span class="devin-batch-hint">每行一个：邮箱 密码（空格或 ---- 分隔）</span>
+            <span class="devin-batch-label">Bulk Import</span>
+            <span class="devin-batch-hint">One per line: email password (separated by space or ----)</span>
           </div>
           <textarea id="devin-batch-input" class="devin-batch-input" rows="6" placeholder="user1@gmail.com pass123&#10;user2@gmail.com----pass456"></textarea>
-          <button id="devin-batch-btn" class="toolbar-btn devin-btn devin-batch-btn">批量导入</button>
+          <button id="devin-batch-btn" class="toolbar-btn devin-btn devin-batch-btn">Bulk Import</button>
         </div>
       </div>
 
-      <!-- 版权信息 -->
+      <!-- Footer / copyright -->
       <div id="sidebar-footer">
-        <div class="footer-line">DuoCLI — 多开 CLI 神器</div>
-        <div class="footer-line">by 大壮好大</div>
+        <div class="footer-line">Posse — your AI agent terminal command center</div>
+        <div class="footer-line footer-tagline">Your AI coding posse</div>
         <div class="footer-line"><a id="footer-github" href="#">GitHub</a></div>
         <div class="footer-line footer-version">Version <span id="app-version">v?</span></div>
-        <div class="footer-tip">如果你喜欢这个软件，只需关注公众号「壮哥的壮」，然后心中默念"大壮好大"，每天祈祷 +1</div>
       </div>
     </div>
   </div>

@@ -25,13 +25,13 @@ export class ChatView {
       <div class="chat-input-area">
         <div class="chat-input-top">
           <select class="chat-model-select" id="chat-model-${sessionId}">
-            <option value="">默认模型</option>
+            <option value="">Default Model</option>
           </select>
           <span class="chat-slash-hint">/auto-login /health /models /clear</span>
         </div>
         <div class="chat-input-row">
-          <textarea class="chat-input" id="chat-input-${sessionId}" rows="1" placeholder="输入消息或 / 命令..." enterkeyhint="send"></textarea>
-          <button class="chat-send-btn" id="chat-send-${sessionId}">发送</button>
+          <textarea class="chat-input" id="chat-input-${sessionId}" rows="1" placeholder="Type a message or a / command..." enterkeyhint="send"></textarea>
+          <button class="chat-send-btn" id="chat-send-${sessionId}">Send</button>
         </div>
       </div>
     `;
@@ -62,7 +62,7 @@ export class ChatView {
   }
 
   private setupIPCListeners(): void {
-    const d = window.duocli;
+    const d = window.posse;
 
     const onDelta = (sessionId: string, text: string) => {
       if (sessionId !== this.sessionId) return;
@@ -92,7 +92,7 @@ export class ChatView {
 
   private async loadModels(): Promise<void> {
     try {
-      const models = await window.duocli.chatModels();
+      const models = await window.posse.chatModels();
       for (const m of models) {
         const opt = document.createElement('option');
         opt.value = m.id;
@@ -104,7 +104,7 @@ export class ChatView {
 
   private async loadMessages(): Promise<void> {
     try {
-      const messages = await window.duocli.chatMessages(this.sessionId);
+      const messages = await window.posse.chatMessages(this.sessionId);
       for (const msg of messages) {
         this.addBubble(msg.role, msg.content);
       }
@@ -182,7 +182,7 @@ export class ChatView {
     this.inputEl.value = '';
     this.inputEl.style.height = 'auto';
 
-    window.duocli.chatSend(this.sessionId, content);
+    window.posse.chatSend(this.sessionId, content);
   }
 
   scrollToBottom(): void {

@@ -14,14 +14,14 @@ import { WindsurfProxyManager } from './windsurf-proxy-manager';
 
 type OpenEditorResult = { ok: true } | { ok: false; error: string };
 
-// macOS: 设置为普通应用模式，显示在 Dock 和 Command+Tab 切换器中
+// macOS: set regular app mode so it appears in the Dock and Command+Tab switcher
 if (process.platform === 'darwin') {
   app.setActivationPolicy('regular');
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
-  dialog.showErrorBox('DuoCLI 已在运行', 'DuoCLI 已经在运行，请切换到已有窗口。');
+  dialog.showErrorBox('Posse is already running', 'Posse is already running; please switch to the existing window.');
   app.exit(0);
 }
 
@@ -37,15 +37,15 @@ app.on('second-instance', () => {
   createWindow(currentAppIcon);
 });
 
-// 文件监听器
+// File watcher
 let fileWatcher: fs.FSWatcher | null = null;
 let watchingCwd: string | null = null;
 
 import * as os from 'os';
 
-const PASTE_IMAGE_DIR = path.join(os.tmpdir(), 'duocli-paste');
+const PASTE_IMAGE_DIR = path.join(os.tmpdir(), 'posse-paste');
 
-// 会话通知状态
+// Session notification state
 const sessionLastInputAt: Map<string, number> = new Map();
 const sessionArmedForNotify: Set<string> = new Set();
 const sessionLastNotifyAt: Map<string, number> = new Map();
@@ -53,14 +53,14 @@ const sessionUserClosed: Set<string> = new Set();
 
 const NOTIFY_COOLDOWN_MS = 15_000;
 const WAITING_INPUT_DELAY_MS = 8_000;
-const IMESSAGE_TARGET = (process.env.DUOCLI_IMESSAGE_TO || '').trim();
-const IMESSAGE_SERVICE = ((process.env.DUOCLI_IMESSAGE_SERVICE || 'iMessage').trim().toLowerCase() === 'sms')
+const IMESSAGE_TARGET = (process.env.POSSE_IMESSAGE_TO || '').trim();
+const IMESSAGE_SERVICE = ((process.env.POSSE_IMESSAGE_SERVICE || 'iMessage').trim().toLowerCase() === 'sms')
   ? 'SMS'
   : 'iMessage';
 
 const sessionOutputTail: Map<string, string> = new Map();
 
-// ========== 已关闭会话持久化 ==========
+// ========== Closed session persistence ==========
 interface ClosedSession {
   id: string;
   title: string;
@@ -104,7 +104,7 @@ function addClosedSession(session: { title: string; cwd: string; presetCommand: 
   safeSend('closed-sessions:update', saved);
 }
 
-// ========== 已关闭 Chat 会话持久化 ==========
+// ========== Closed chat session persistence ==========
 interface ClosedChatSession {
   id: string;
   title: string;
@@ -187,7 +187,7 @@ function invalidateAiPreferenceCache(): void {
   aiPreferenceCache = null;
 }
 
-// 编辑器偏好持久化
+// Editor preference persistence
 function getEditorPrefPath(): string {
   return path.join(app.getPath('userData'), 'editor-preference.json');
 }
@@ -261,15 +261,15 @@ async function openFileInEditor(filePath: string): Promise<OpenEditorResult> {
   return error ? { ok: false, error } : { ok: true };
 }
 
-// ========== CLI 模型提供商检测 ==========
+// ========== CLI model provider detection ==========
 
-// 根据 preset 命令获取实际使用的模型提供商
+// Resolve the model provider actually used from the preset command
 function getCliProvider(presetCommand: string): string | null {
   const home = os.homedir();
 
-  // 判断是哪个 CLI
+  // Determine which CLI it is
   if (presetCommand.startsWith('claude')) {
-    // 读取 Claude 配置
+    // Read the Claude config
     const settingsPath = path.join(home, '.claude', 'settings.json');
     try {
       if (fs.existsSync(settingsPath)) {
@@ -277,14 +277,14 @@ function getCliProvider(presetCommand: string): string | null {
         const env = settings.env || {};
         const baseUrl = env.ANTHROPIC_BASE_URL || '';
 
-        // 根据 baseUrl 判断模型提供商
+        // Determine the model provider from baseUrl
         if (baseUrl.includes('minimaxi')) return 'MiniMax';
         if (baseUrl.includes('deepseek')) return 'DeepSeek';
         if (baseUrl.includes('zhipu') || baseUrl.includes('bigmodel')) return 'GLM';
         if (baseUrl.includes('cloudflare')) return 'Cloudflare';
         if (baseUrl.includes('anthropic') || !baseUrl) return 'Anthropic';
 
-        // 如果有自定义 baseUrl，尝试提取域名
+        // If there is a custom baseUrl, try to extract the domain
         if (baseUrl) {
           try {
             const url = new URL(baseUrl);
@@ -294,7 +294,7 @@ function getCliProvider(presetCommand: string): string | null {
       }
     } catch { /* ignore */ }
 
-    // 尝试从 shell 环境变量读取
+    // Try reading from shell environment variables
     try {
       const rcFiles = [path.join(home, '.zshrc'), path.join(home, '.bashrc')];
       for (const rcFile of rcFiles) {
@@ -312,7 +312,7 @@ function getCliProvider(presetCommand: string): string | null {
   }
 
   if (presetCommand.startsWith('codex')) {
-    // Codex 使用 OpenAI 兼容 API
+    // Codex uses an OpenAI-compatible API
     return 'OpenAI';
   }
 
@@ -321,7 +321,7 @@ function getCliProvider(presetCommand: string): string | null {
   }
 
   if (presetCommand.startsWith('kimi')) {
-    // Kimi 使用月之暗面 API
+    // Kimi uses the Moonshot API
     return 'Moonshot';
   }
 
@@ -330,7 +330,7 @@ function getCliProvider(presetCommand: string): string | null {
   }
 
   if (presetCommand.startsWith('opencode')) {
-    // OpenCode 可能使用多种后端
+    // OpenCode may use various backends
     const cfgPath = path.join(home, '.config', 'opencode', 'opencode.json');
     try {
       if (fs.existsSync(cfgPath)) {
@@ -357,11 +357,11 @@ function getCliProvider(presetCommand: string): string | null {
     return 'Cursor';
   }
 
-  // 默认返回空
+  // Default to null
   return null;
 }
 
-// 解析 shell 导出语句
+// Parse shell export statements
 function parseShellExports(content: string): Map<string, string> {
   const vars = new Map<string, string>();
   for (const line of content.split('\n')) {
@@ -441,10 +441,10 @@ function updateTray(): void {
   const statusText = trayState.isOnline ? 'Online' : 'Starting';
   const clientText = `${trayState.connectedClients} remote client${trayState.connectedClients === 1 ? '' : 's'}`;
   const title = trayState.isOnline
-    ? `DuoCLI ${trayState.connectedClients > 0 ? trayState.connectedClients : '●'}`
-    : 'DuoCLI …';
+    ? `Posse ${trayState.connectedClients > 0 ? trayState.connectedClients : '●'}`
+    : 'Posse …';
   tray.setTitle(title);
-  tray.setToolTip(`DuoCLI Remote: ${statusText}${trayState.lanUrl ? `\n${trayState.lanUrl}` : ''}\n${clientText}`);
+  tray.setToolTip(`Posse Remote: ${statusText}${trayState.lanUrl ? `\n${trayState.lanUrl}` : ''}\n${clientText}`);
 
   const url = trayState.publicUrl || trayState.lanUrl;
   const menu = Menu.buildFromTemplate([
@@ -454,12 +454,12 @@ function updateTray(): void {
     { label: trayState.lanUrl ? `LAN: ${trayState.lanUrl}` : 'LAN: starting…', enabled: false },
     ...(trayState.publicUrl ? [{ label: `Public: ${trayState.publicUrl}`, enabled: false }] : []),
     { type: 'separator' },
-    { label: 'Open DuoCLI', click: showMainWindow },
+    { label: 'Open Posse', click: showMainWindow },
     { label: 'Open Terminal Client', click: () => { shell.openExternal(getTerminalClientUrl()); } },
     { label: 'Copy Remote URL', enabled: Boolean(url), click: copyRemoteUrl },
     { label: 'Open Remote URL', enabled: Boolean(url), click: () => { if (url) shell.openExternal(url); } },
     { type: 'separator' },
-    { label: 'Quit DuoCLI', click: () => app.quit() },
+    { label: 'Quit Posse', click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
 }
@@ -481,7 +481,7 @@ function updateRemoteTrayStatus(status: RemoteConnectionStatus): void {
 }
 
 function loadAppIcon(): Electron.NativeImage | undefined {
-  // macOS 打包后用 .icns，开发模式用 .png
+  // macOS uses .icns when packaged, .png in dev mode
   const candidates = [
     path.join(__dirname, '../../build/icon.png'),
     path.join(__dirname, '../../build/icon.icns'),
@@ -504,7 +504,7 @@ function createWindow(appIcon?: Electron.NativeImage): void {
     height: 800,
     minWidth: 800,
     minHeight: 500,
-    title: 'DuoCLI',
+    title: 'Posse',
     icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -522,10 +522,10 @@ function createWindow(appIcon?: Electron.NativeImage): void {
     }
   });
 
-  // 拦截 Command+R (macOS) 和 Ctrl+R (Windows/Linux) 防止刷新窗口
+  // Intercept Command+R (macOS) and Ctrl+R (Windows/Linux) to prevent refreshing the window
   const refreshKey = process.platform === 'darwin' ? 'Command+R' : 'Ctrl+R';
   globalShortcut.register(refreshKey, () => {
-    // 不做任何操作，阻止默认刷新行为
+    // Do nothing, blocking the default refresh behavior
   });
 
   mainWindow.on('closed', () => {
@@ -570,7 +570,7 @@ function sendIMessageNotification(message: string): void {
 
 function sendUserNotification(id: string, title: string, body: string): void {
   sendRemotePush(title, body, id);
-  sendIMessageNotification(`[DuoCLI] ${title}：${body}`);
+  sendIMessageNotification(`[Posse] ${title}：${body}`);
 }
 
 function maybeNotifyAttention(id: string, data: string): void {
@@ -593,10 +593,10 @@ function maybeNotifyAttention(id: string, data: string): void {
   const waitedLongEnough = now - lastInputAt >= WAITING_INPUT_DELAY_MS;
 
   const session = ptyManager.getSession(id);
-  const title = session?.title || session?.presetCommand || '终端';
+  const title = session?.title || session?.presetCommand || 'Terminal';
 
   if (hasPrompt && needDecision) {
-    sendUserNotification(id, '需要你决策', title);
+    sendUserNotification(id, 'Your decision needed', title);
     sessionLastNotifyAt.set(id, now);
     sessionArmedForNotify.delete(id);
     return;
@@ -605,9 +605,9 @@ function maybeNotifyAttention(id: string, data: string): void {
   if (!sessionArmedForNotify.has(id) || !hasPrompt || !waitedLongEnough) return;
 
   if (taskDone) {
-    sendUserNotification(id, '任务已完成', title);
+    sendUserNotification(id, 'Task completed', title);
   } else {
-    sendUserNotification(id, '会话等待输入', title);
+    sendUserNotification(id, 'Session waiting for input', title);
   }
   sessionLastNotifyAt.set(id, now);
   sessionArmedForNotify.delete(id);
@@ -626,7 +626,7 @@ async function setupPtyManager(): Promise<void> {
       safeSend('pty:title-update', id, title);
     },
     onExit: (id, exitedSession) => {
-      // 保存有 resume ID 的会话到已关闭列表
+      // Save sessions that have a resume ID to the closed list
       const session = exitedSession || ptyManager.getSession(id);
       if (session?.resumeId) {
         addClosedSession({
@@ -638,10 +638,10 @@ async function setupPtyManager(): Promise<void> {
         });
       }
 
-      // 用户主动关闭的会话不发通知
+      // Do not notify for sessions the user closed deliberately
       if (!sessionUserClosed.has(id)) {
-        const title = session?.title || '终端';
-        sendUserNotification(id, '会话已结束', title);
+        const title = session?.title || 'Terminal';
+        sendUserNotification(id, 'Session ended', title);
       }
       sessionUserClosed.delete(id);
       sessionOutputTail.delete(id);
@@ -661,16 +661,129 @@ async function setupPtyManager(): Promise<void> {
   });
 }
 
+type AgentHistorySession = {
+  id: string;
+  title: string;
+  cwd: string;
+  mtimeMs: number;
+  agent: 'claude' | 'codex';
+  resumeCommand: string;
+};
+
+// Read the first line of a file (up to ~16KB) for cheap parsing of the Codex session_meta
+function readFirstLine(filePath: string, maxBytes = 16 * 1024): string {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(maxBytes);
+    const bytes = fs.readSync(fd, buf, 0, maxBytes, 0);
+    const text = buf.subarray(0, bytes).toString('utf-8');
+    const nl = text.indexOf('\n');
+    return nl >= 0 ? text.slice(0, nl) : text;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// List a directory's session history in Codex
+// Codex stores by date: ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl
+// cwd is in session_meta.payload.cwd on each file's first line; the title is in ~/.codex/session_index.jsonl
+function listCodexSessions(targetCwd: string): AgentHistorySession[] {
+  const MAX_MATCHES = 40;
+  const MAX_FILES = 800;
+  const results: AgentHistorySession[] = [];
+
+  try {
+    const normTarget = path.resolve(String(targetCwd || ''));
+    if (!normTarget) return [];
+
+    // 1. Read the title index (id -> thread_name); the last line wins
+    const titleMap = new Map<string, string>();
+    try {
+      const indexPath = path.join(os.homedir(), '.codex', 'session_index.jsonl');
+      if (fs.existsSync(indexPath)) {
+        const content = fs.readFileSync(indexPath, 'utf-8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const obj = JSON.parse(trimmed) as { id?: string; thread_name?: string };
+            if (obj.id && typeof obj.thread_name === 'string') {
+              titleMap.set(obj.id, obj.thread_name);
+            }
+          } catch { /* skip bad line */ }
+        }
+      }
+    } catch { /* missing index -> empty map */ }
+
+    // 2. Walk the date directories in descending order
+    const sessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
+    if (!fs.existsSync(sessionsRoot)) return [];
+
+    const listDirDesc = (dir: string): string[] => {
+      try {
+        return fs.readdirSync(dir)
+          .filter((n) => /^\d+$/.test(n))
+          .sort((a, b) => Number(b) - Number(a));
+      } catch { return []; }
+    };
+
+    let scanned = 0;
+    outer:
+    for (const year of listDirDesc(sessionsRoot)) {
+      const yearDir = path.join(sessionsRoot, year);
+      for (const month of listDirDesc(yearDir)) {
+        const monthDir = path.join(yearDir, month);
+        for (const day of listDirDesc(monthDir)) {
+          const dayDir = path.join(monthDir, day);
+          let files: string[];
+          try { files = fs.readdirSync(dayDir); } catch { continue; }
+          for (const file of files) {
+            if (!file.startsWith('rollout-') || !file.endsWith('.jsonl')) continue;
+            if (scanned >= MAX_FILES || results.length >= MAX_MATCHES) break outer;
+            scanned++;
+            const full = path.join(dayDir, file);
+            try {
+              const st = fs.statSync(full);
+              if (!st.isFile()) continue;
+              const firstLine = readFirstLine(full).trim();
+              if (!firstLine) continue;
+              const obj = JSON.parse(firstLine) as {
+                type?: string;
+                payload?: { id?: string; cwd?: string };
+              };
+              if (obj.type !== 'session_meta' || !obj.payload) continue;
+              const fileCwd = path.resolve(String(obj.payload.cwd || ''));
+              if (fileCwd !== normTarget) continue;
+              const id = String(obj.payload.id || '');
+              if (!id) continue;
+              results.push({
+                id,
+                title: titleMap.get(id) || id,
+                cwd: normTarget,
+                mtimeMs: st.mtimeMs,
+                agent: 'codex',
+                resumeCommand: `codex resume ${id}`,
+              });
+            } catch { /* skip unreadable / unparseable file */ }
+          }
+        }
+      }
+    }
+  } catch { /* never throw */ }
+
+  return results;
+}
+
 function registerIPC(): void {
-  // 设置窗口标题
+  // Set window title
   ipcMain.on('window:set-title', (_e, title: string) => {
     if (mainWindow) mainWindow.setTitle(title);
   });
 
-  // 创建终端
+  // Create terminal
   ipcMain.handle('pty:create', async (_e, cwd: string, presetCommand: string, themeId: string, providerEnv?: Record<string, string>) => {
     const session = await ptyManager.create(cwd, presetCommand, themeId, providerEnv);
-    // 如果有 providerEnv，根据 baseUrl 推断 provider 名称
+    // If providerEnv is present, infer the provider name from baseUrl
     let provider: string | null = null;
     if (providerEnv && providerEnv.ANTHROPIC_BASE_URL) {
       const baseUrl = providerEnv.ANTHROPIC_BASE_URL;
@@ -679,11 +792,11 @@ function registerIPC(): void {
       else if (baseUrl.includes('zhipu') || baseUrl.includes('bigmodel')) provider = 'GLM';
       else if (baseUrl.includes('anthropic') && !baseUrl.includes('minimaxi')) provider = 'Anthropic';
       else {
-        // 尝试从域名提取
+        // Try extracting from the domain
         try {
           const url = new URL(baseUrl);
           provider = url.hostname.replace(/^(api|code)\./, '').split('.')[0];
-          // 首字母大写
+          // Capitalize the first letter
           provider = provider.charAt(0).toUpperCase() + provider.slice(1);
         } catch { provider = 'Custom'; }
       }
@@ -701,22 +814,22 @@ function registerIPC(): void {
     };
   });
 
-  // 写入数据
+  // Write data
   ipcMain.handle('pty:write', async (_e, id: string, data: string) => {
-    console.log(`[Main] pty:write 收到, id=${id}, data="${data}"`);
+    console.log(`[Main] pty:write received, id=${id}, data="${data}"`);
     await ptyManager.write(id, data);
     return true;
   });
 
-  // 调整大小
+  // Resize
   ipcMain.handle('pty:resize', async (_e, id: string, cols: number, rows: number) => {
     await ptyManager.resize(id, cols, rows);
     return true;
   });
 
-  // 销毁终端
+  // Destroy terminal
   ipcMain.on('pty:destroy', async (_e, id: string) => {
-    // 兜底：从 buffer 提取 resume ID，保存到已关闭列表
+    // Fallback: extract the resume ID from the buffer and save to the closed list
     await ptyManager.captureResumeFromBuffer(id);
     const session = ptyManager.getSession(id);
     if (session?.resumeId) {
@@ -738,19 +851,19 @@ function registerIPC(): void {
     sessionUserClosed.delete(id);
   });
 
-  // 重命名终端
+  // Rename terminal
   ipcMain.on('pty:rename', (_e, id: string, title: string) => {
     ptyManager.rename(id, title).catch((error) => {
       console.error('[Main] Failed to rename PTY session:', error);
     });
   });
 
-  // 重新用 AI 生成标题
+  // Regenerate title with AI
   ipcMain.handle('pty:regenerate-title', async (_e, id: string) => {
     await ptyManager.regenerateTitle(id);
   });
 
-  // 获取所有会话信息
+  // Get info for all sessions
   ipcMain.handle('pty:sessions', async () => {
     const sessions = await ptyManager.refreshSessions();
     return sessions.map((s) => ({
@@ -764,7 +877,7 @@ function registerIPC(): void {
     }));
   });
 
-  // ========== 已关闭会话 IPC ==========
+  // ========== Closed session IPC ==========
   ipcMain.handle('closed-sessions:list', () => loadClosedSessions());
   ipcMain.handle('closed-sessions:remove', (_e, id: string) => {
     const sessions = loadClosedSessions().filter(s => s.id !== id);
@@ -783,7 +896,7 @@ function registerIPC(): void {
     return sessions;
   });
 
-  // ========== 已关闭 Chat 会话 IPC ==========
+  // ========== Closed chat session IPC ==========
   ipcMain.handle('closed-chat:list', () => loadClosedChatSessions());
   ipcMain.handle('closed-chat:remove', (_e, id: string) => {
     const sessions = loadClosedChatSessions().filter(s => s.id !== id);
@@ -800,18 +913,18 @@ function registerIPC(): void {
     const closed = list.find(s => s.id === closedId);
     if (!closed) return null;
     const session = chatSessionManager.restore(closed.workspace, closed.model, closed.messages, closed.title);
-    // 从已关闭列表中移除
+    // Remove from the closed list
     const remaining = list.filter(s => s.id !== closedId);
     saveClosedChatSessions(remaining);
     return { id: session.id, title: session.title, model: session.model, workspace: session.workspace, createdAt: session.createdAt };
   });
 
-  // 选择工作目录
+  // Select working directory
   ipcMain.handle('dialog:select-folder', async (_e, currentPath?: string) => {
     const defaultPath = currentPath && fs.existsSync(currentPath) ? currentPath : os.homedir();
     const dialogOptions: Electron.OpenDialogOptions = {
-      title: '选择工作目录',
-      buttonLabel: '选择此文件夹',
+      title: 'Select working directory',
+      buttonLabel: 'Select this folder',
       properties: ['openDirectory', 'createDirectory'],
       defaultPath,
     };
@@ -823,7 +936,7 @@ function registerIPC(): void {
     return result.filePaths[0];
   });
 
-  // 读取目录（左侧文件树）
+  // Read directory (left-side file tree)
   ipcMain.handle('file-tree:list-dir', (_e, dirPath: string) => {
     try {
       const abs = path.resolve(String(dirPath || ''));
@@ -851,9 +964,9 @@ function registerIPC(): void {
     }
   });
 
-  // 读取文件内容用于右侧预览面板（只读，带大小/二进制保护）
+  // Read file contents for the right-side preview panel (read-only, with size/binary guards)
   ipcMain.handle('fs:read-file', (_e, filePath: string) => {
-    const MAX_PREVIEW_BYTES = 1024 * 1024; // 1MB 上限，避免卡顿
+    const MAX_PREVIEW_BYTES = 1024 * 1024; // 1MB cap to avoid lag
     try {
       const abs = path.resolve(String(filePath || ''));
       const st = fs.statSync(abs);
@@ -862,7 +975,7 @@ function registerIPC(): void {
         return { ok: false, error: 'too-large', size: st.size };
       }
       const buf = fs.readFileSync(abs);
-      // 简易二进制检测：前 8000 字节含 NUL 视为二进制
+      // Simple binary detection: treat NUL in the first 8000 bytes as binary
       const sniff = buf.subarray(0, 8000);
       if (sniff.includes(0)) {
         return { ok: false, error: 'binary', size: st.size };
@@ -878,12 +991,111 @@ function registerIPC(): void {
     }
   });
 
+  // List a directory's native session history in Claude Code (~/.claude/projects/<encoded>/<uuid>.jsonl)
+  ipcMain.handle('claude-sessions:list', (_e, cwd: string) => {
+    const MAX_SESSIONS = 40;
+    const LARGE_FILE_BYTES = 3 * 1024 * 1024; // Above this, read only the head to find the title
+    const HEAD_BYTES = 64 * 1024;
+
+    const parseTitle = (filePath: string, size: number, uuid: string): string => {
+      try {
+        let content: string;
+        if (size > LARGE_FILE_BYTES) {
+          const fd = fs.openSync(filePath, 'r');
+          try {
+            const buf = Buffer.alloc(HEAD_BYTES);
+            const bytes = fs.readSync(fd, buf, 0, HEAD_BYTES, 0);
+            content = buf.subarray(0, bytes).toString('utf-8');
+          } finally {
+            fs.closeSync(fd);
+          }
+        } else {
+          content = fs.readFileSync(filePath, 'utf-8');
+        }
+
+        const lines = content.split('\n');
+        // Prefer: the last ai-title
+        let aiTitle = '';
+        let firstUserText = '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let obj: { type?: string; aiTitle?: string; message?: { content?: unknown } };
+          try { obj = JSON.parse(trimmed); } catch { continue; }
+          if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') {
+            aiTitle = obj.aiTitle; // Do not break; take the last one
+          }
+          if (!firstUserText && obj.type === 'user') {
+            const c = obj.message?.content;
+            if (typeof c === 'string') firstUserText = c;
+          }
+        }
+
+        if (aiTitle.trim()) return aiTitle.trim().slice(0, 60);
+
+        if (firstUserText) {
+          const cleaned = firstUserText
+            .replace(/<command-name>[\s\S]*?<\/command-name>/g, '')
+            .replace(/<command-message>[\s\S]*?<\/command-message>/g, '')
+            .replace(/<command-args>[\s\S]*?<\/command-args>/g, '')
+            .replace(/<[^>]*>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (cleaned) return cleaned.slice(0, 60);
+        }
+      } catch { /* ignore, fall through to uuid */ }
+      return uuid;
+    };
+
+    try {
+      const abs = path.resolve(String(cwd || ''));
+      if (!abs) return [];
+      const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-');
+      const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
+      if (!fs.existsSync(dir)) return [];
+
+      const entries = fs.readdirSync(dir)
+        .filter((name) => name.endsWith('.jsonl'))
+        .map((name) => {
+          const full = path.join(dir, name);
+          try {
+            const st = fs.statSync(full);
+            if (!st.isFile()) return null;
+            return { name, full, size: st.size, mtimeMs: st.mtimeMs };
+          } catch { return null; }
+        })
+        .filter((e): e is { name: string; full: string; size: number; mtimeMs: number } => e !== null)
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
+        .slice(0, MAX_SESSIONS);
+
+      const claudeList = entries.map((e) => {
+        const uuid = e.name.replace(/\.jsonl$/, '');
+        return {
+          id: uuid,
+          title: parseTitle(e.full, e.size, uuid),
+          cwd: abs,
+          mtimeMs: e.mtimeMs,
+          agent: 'claude' as const,
+          resumeCommand: `claude --resume ${uuid}`,
+        };
+      });
+
+      const codexList = listCodexSessions(abs);
+
+      return [...claudeList, ...codexList]
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
+        .slice(0, MAX_SESSIONS);
+    } catch {
+      return [];
+    }
+  });
+
   ipcMain.handle('remote:add-recent-cwd', (_e, cwd: string) => {
     try { addRemoteRecentCwd(cwd); } catch { /* ignore */ }
     return true;
   });
 
-  // ========== 剪贴板图片 IPC ==========
+  // ========== Clipboard image IPC ==========
 
   ipcMain.handle('clipboard:save-image', async () => {
     const img = clipboard.readImage();
@@ -899,14 +1111,14 @@ function registerIPC(): void {
     return filePath;
   });
 
-  // ========== 剪贴板文件 IPC ==========
+  // ========== Clipboard file IPC ==========
   ipcMain.handle('clipboard:get-file-path', async () => {
-    // 尝试读取文件 URL
+    // Try reading the file URL
     const formats = clipboard.availableFormats();
     if (formats.includes('public.file-url')) {
       const buffer = clipboard.readBuffer('public.file-url');
       const url = buffer.toString('utf8');
-      // file-url 格式: file://localhost/path/to/file 或 file:///path/to/file
+      // file-url format: file://localhost/path/to/file or file:///path/to/file
       const match = url.match(/file:\/\/\/?(.+)$/);
       if (match && match[1]) {
         return decodeURIComponent(match[1]);
@@ -915,9 +1127,9 @@ function registerIPC(): void {
     return null;
   });
 
-  // ========== 文件监听 IPC ==========
+  // ========== File watching IPC ==========
 
-  // 常见源代码文件扩展名白名单
+  // Allowlist of common source file extensions
   const SOURCE_FILE_EXTENSIONS = [
     // TypeScript/JavaScript
     '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
@@ -937,13 +1149,13 @@ function registerIPC(): void {
     '.rs',
     // HTML/CSS
     '.html', '.htm', '.css', '.scss', '.sass', '.less',
-    // Markdown/文档
+    // Markdown/docs
     '.md', '.mdx', '.txt',
     // Shell
     '.sh', '.bash', '.zsh', '.fish',
     // SQL
     '.sql',
-    // 其他常见源码
+    // Other common source files
     '.xml', '.xaml', '.gradle', '.properties',
   ];
 
@@ -953,7 +1165,7 @@ function registerIPC(): void {
   }
 
   ipcMain.handle('filewatcher:start', (_e, cwd: string) => {
-    // 停掉旧的
+    // Stop the old one
     if (fileWatcher) {
       fileWatcher.close();
       fileWatcher = null;
@@ -962,24 +1174,24 @@ function registerIPC(): void {
     try {
       fileWatcher = fs.watch(cwd, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
-        // 忽略 .git 目录和隐藏文件
+        // Ignore the .git directory and hidden files
         if (filename.startsWith('.git/') || filename.startsWith('.git\\')) return;
         if (filename.startsWith('.')) return;
-        // 忽略常见非源码目录
+        // Ignore common non-source directories
         if (filename.includes('node_modules')) return;
         if (filename.includes('dist/') || filename.includes('dist\\')) return;
         if (filename.includes('build/') || filename.includes('build\\')) return;
         if (filename.includes('out/') || filename.includes('out\\')) return;
         if (filename.includes('__pycache__')) return;
         if (filename.includes('.cache/') || filename.includes('.cache\\')) return;
-        // 忽略编译产物和临时文件
+        // Ignore build artifacts and temporary files
         if (/\.(map|d\.ts|tsbuildinfo|pyc|o|a|dylib|so|class|tmp|temp|swp|swo|bak|log)$/i.test(filename)) return;
         if (/~$/.test(filename)) return;
-        // 只显示源代码文件（白名单过滤）
+        // Only show source files (allowlist filtering)
         if (!isSourceFile(filename)) return;
         mainWindow?.webContents.send('filewatcher:change', filename, eventType);
       });
-    } catch { /* 监听失败静默忽略 */ }
+    } catch { /* silently ignore watch failures */ }
   });
 
   ipcMain.handle('filewatcher:stop', () => {
@@ -1000,20 +1212,20 @@ function registerIPC(): void {
     let filters: { name: string; extensions: string[] }[];
     if (process.platform === 'win32') {
       defaultPath = 'C:\\Program Files';
-      filters = [{ name: '可执行文件', extensions: ['exe'] }];
+      filters = [{ name: 'Executable files', extensions: ['exe'] }];
     } else if (process.platform === 'darwin') {
       defaultPath = '/Applications';
-      filters = [{ name: '应用程序', extensions: ['app'] }];
+      filters = [{ name: 'Applications', extensions: ['app'] }];
     } else {
       defaultPath = '/usr/bin';
       filters = [];
     }
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择编辑器',
+      title: 'Select editor',
       defaultPath,
       filters,
       properties: ['openFile'],
-      message: '选择用于打开文件的编辑器',
+      message: 'Choose the editor to open files with',
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const editorPath = result.filePaths[0];
@@ -1025,12 +1237,12 @@ function registerIPC(): void {
     return loadEditorPreference();
   });
 
-  // 在 Finder 中打开目录
+  // Open directory in Finder
   ipcMain.handle('shell:open-folder', (_e, folderPath: string) => {
     shell.showItemInFolder(folderPath);
   });
 
-  // 读取目录内容
+  // Read directory contents
   ipcMain.handle('fs:read-directory', async (_e, dirPath: string) => {
     try {
       const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
@@ -1040,17 +1252,17 @@ function registerIPC(): void {
         isFile: entry.isFile(),
       }));
     } catch (error) {
-      console.error('读取目录失败:', error);
+      console.error('Failed to read directory:', error);
       return [];
     }
   });
 
-  // 用默认应用打开文件
+  // Open file with default app
   ipcMain.handle('shell:open-file', (_e, filePath: string) => {
     shell.openPath(filePath);
   });
 
-  // 打开外部链接
+  // Open external link
   ipcMain.handle('shell:open-url', (_e, url: string) => {
     shell.openExternal(url);
   });
@@ -1058,9 +1270,9 @@ function registerIPC(): void {
   ipcMain.handle('app:get-version', () => app.getVersion());
   ipcMain.handle('terminal-client:get-url', () => getTerminalClientUrl());
 
-  // ========== AI 配置 IPC ==========
+  // ========== AI config IPC ==========
 
-  // 直接应用手动配置（保存偏好，不再调用已移除的 AI 服务）
+  // Apply the manual config directly (saves the preference; no longer calls the removed AI service)
   ipcMain.handle('ai:apply-config', (_e, config: { apiFormat: string; baseUrl: string; apiKey: string; model: string }) => {
     try {
       fs.writeFileSync(getPreferencePath(), JSON.stringify({
@@ -1073,7 +1285,7 @@ function registerIPC(): void {
     return true;
   });
 
-  // 获取当前保存的配置
+  // Get the currently saved config
   ipcMain.handle('ai:get-current-config', () => {
     const pref = loadAiPreferenceData();
     if (pref.manualConfig) {
@@ -1082,20 +1294,20 @@ function registerIPC(): void {
     return null;
   });
 
-  // 测试 AI 配置连通性
+  // Test AI config connectivity
   ipcMain.handle('ai:test-config', async (_e, _config: { apiFormat: string; baseUrl: string; apiKey: string; model: string }) => {
-    return { ok: false, error: 'AI 功能已移除' };
+    return { ok: false, error: 'AI feature has been removed' };
   });
 
-  // 获取 CLI 实际使用的模型提供商
+  // Get the model provider actually used by the CLI
   ipcMain.handle('cli:get-provider', (_e, presetCommand: string) => {
     return getCliProvider(presetCommand);
   });
 
-  // ========== Claude 供应商配置 ==========
+  // ========== Claude provider config ==========
   const CLAUDE_PROVIDERS_PATH = path.join(app.getPath('userData'), 'claude-providers.json');
 
-  // 自动从 ~/.claude/settings.json 检测 MiniMax 等自定义供应商
+  // Auto-detect custom providers like MiniMax from ~/.claude/settings.json
   function detectClaudeProvidersFromSettings(): any[] {
     const home = os.homedir();
     const settingsPath = path.join(home, '.claude', 'settings.json');
@@ -1109,7 +1321,7 @@ function registerIPC(): void {
         const apiKey = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '';
         const model = env.ANTHROPIC_MODEL || env.ANTHROPIC_DEFAULT_SONNET_MODEL || '';
 
-        // 如果有自定义 baseUrl 且不是默认的 Anthropic，则自动添加为供应商
+        // If there is a custom baseUrl that is not the default Anthropic, add it as a provider automatically
         if (baseUrl && !baseUrl.includes('api.anthropic.com')) {
           let name = 'Custom';
           let id = 'custom';
@@ -1121,16 +1333,16 @@ function registerIPC(): void {
             name = 'DeepSeek';
             id = 'deepseek';
           } else if (baseUrl.includes('zhipu') || baseUrl.includes('bigmodel')) {
-            name = 'GLM (智谱清言)';
+            name = 'GLM (Zhipu)';
             id = 'glm';
           } else if (baseUrl.includes('moonshot')) {
-            name = 'Kimi (月之暗面)';
+            name = 'Kimi (Moonshot)';
             id = 'kimi';
           } else if (baseUrl.includes('qwen') || baseUrl.includes('dashscope')) {
-            name = 'QWEN (通义千问)';
+            name = 'QWEN (Tongyi Qianwen)';
             id = 'qwen';
           } else {
-            // 从域名提取名称
+            // Extract the name from the domain
             try {
               const url = new URL(baseUrl);
               const host = url.hostname.replace(/^(api|code)\./, '');
@@ -1157,11 +1369,11 @@ function registerIPC(): void {
     try {
       if (fs.existsSync(CLAUDE_PROVIDERS_PATH)) {
         const saved = JSON.parse(fs.readFileSync(CLAUDE_PROVIDERS_PATH, 'utf-8'));
-        // 合并自动检测到的供应商（已保存的优先）
+        // Merge auto-detected providers (saved ones take priority)
         const detected = detectClaudeProvidersFromSettings();
         const savedIds = new Set(saved.map((p: any) => p.id));
 
-        // 添加未保存的检测到的供应商
+        // Add detected providers that are not saved
         for (const p of detected) {
           if (!savedIds.has(p.id)) {
             saved.push(p);
@@ -1170,7 +1382,7 @@ function registerIPC(): void {
         return saved;
       }
     } catch { /* ignore */ }
-    // 没有保存的配置时，返回自动检测到的供应商
+    // When there is no saved config, return the auto-detected providers
     return detectClaudeProvidersFromSettings();
   });
 
@@ -1179,7 +1391,7 @@ function registerIPC(): void {
     return true;
   });
 
-  // ========== Devin 账号管理 ==========
+  // ========== Devin account management ==========
   const DEVIN_ACCOUNTS_PATH = path.join(os.homedir(), '.session-sync-manager', 'accounts.json');
   const authCliPath = (() => {
     try {
@@ -1191,7 +1403,7 @@ function registerIPC(): void {
 
   function runAuthCli(args: string[], stdin?: string): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
-      if (!authCliPath) { resolve({ code: 1, stdout: '', stderr: 'auth-cli.mjs 未找到' }); return; }
+      if (!authCliPath) { resolve({ code: 1, stdout: '', stderr: 'auth-cli.mjs not found' }); return; }
       const child = spawn('node', [authCliPath, ...args], { stdio: 'pipe' });
       let stdout = '', stderr = '';
       child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
@@ -1221,7 +1433,7 @@ function registerIPC(): void {
 
   ipcMain.handle('devin-accounts:add-batch', async (_e, text: string) => {
     const { code, stderr } = await runAuthCli(['add', '--batch'], text);
-    // auth-cli.mjs 的 add --batch 把统计信息输出到 stderr
+    // auth-cli.mjs's add --batch writes its stats to stderr
     return { ok: code === 0, output: stderr.trim(), error: code !== 0 ? stderr.trim() : undefined };
   });
 
@@ -1231,13 +1443,13 @@ function registerIPC(): void {
   });
 
   ipcMain.handle('devin-accounts:switch', async (_e, opts: { email?: string; next?: boolean }) => {
-    // next 为 true 或不传 email 时，auth-cli.mjs 默认执行轮转切到下一个账号
+    // When next is true or no email is passed, auth-cli.mjs rotates to the next account by default
     const args = opts.email ? ['switch', '--force', opts.email] : ['switch'];
     const { code, stdout, stderr } = await runAuthCli([...args, '--json']);
-    // auth-cli.mjs 内部也会旋转 installation_id，这里作为兜底再旋转一次
+    // auth-cli.mjs also rotates installation_id internally; rotate once more here as a fallback
     rotateDevinInstallationId();
     if (code !== 0) return { ok: false, error: stderr.trim() };
-    // 重新读取更新后的账号状态
+    // Re-read the updated account state
     try {
       const updated = JSON.parse(fs.readFileSync(DEVIN_ACCOUNTS_PATH, 'utf-8'));
       const cur = updated.accounts[updated.currentIndex];
@@ -1253,7 +1465,7 @@ function registerIPC(): void {
     try {
       return { ok: true, ...JSON.parse(stdout.trim()) };
     } catch {
-      return { ok: false, error: '解析失败' };
+      return { ok: false, error: 'Parse failed' };
     }
   });
 
@@ -1264,7 +1476,7 @@ function registerIPC(): void {
       const results = JSON.parse(stdout.trim());
       return { ok: true, results };
     } catch {
-      return { ok: false, error: '解析失败' };
+      return { ok: false, error: 'Parse failed' };
     }
   });
 
@@ -1274,7 +1486,7 @@ function registerIPC(): void {
     try {
       return { ok: true, ...JSON.parse(stdout.trim()) };
     } catch {
-      return { ok: false, error: '解析失败' };
+      return { ok: false, error: 'Parse failed' };
     }
   });
 
@@ -1283,16 +1495,16 @@ function registerIPC(): void {
     return { ok: true };
   });
 
-  // 渲染进程主动获取远程服务器信息（解决 IPC 消息早于渲染进程加载的竞态问题）
+  // Renderer proactively fetches remote server info (resolves the race where IPC messages arrive before the renderer loads)
   ipcMain.handle('remote:get-server-info', () => cachedRemoteServerInfo);
 
-  // ========== 催工配置中转 IPC ==========
-  // main 进程作为中转：remote-server API → renderer 的 sessionAutoContinue
+  // ========== Auto-continue config relay IPC ==========
+  // The main process acts as a relay: remote-server API -> the renderer's sessionAutoContinue
 
-  // 存放 pending 的 get 请求回调
+  // Holds pending get-request callbacks
   const autoContinuePendingGets = new Map<string, (config: any) => void>();
 
-  // renderer 回复配置
+  // The renderer replies with the config
   ipcMain.on('auto-continue:config-reply', (_e, sessionId: string, config: any) => {
     const resolve = autoContinuePendingGets.get(sessionId);
     if (resolve) {
@@ -1301,12 +1513,12 @@ function registerIPC(): void {
     }
   });
 
-  // 供 remote-server 调用：读取催工配置
+  // Called by remote-server: read the auto-continue config
   (global as any).__getAutoContinueConfig = (sessionId: string): Promise<any> => {
     return new Promise((resolve) => {
       autoContinuePendingGets.set(sessionId, resolve);
       safeSend('auto-continue:get', sessionId);
-      // 超时兜底
+      // Timeout fallback
       setTimeout(() => {
         if (autoContinuePendingGets.has(sessionId)) {
           autoContinuePendingGets.delete(sessionId);
@@ -1316,13 +1528,13 @@ function registerIPC(): void {
     });
   };
 
-  // 供 remote-server 调用：写入催工配置
+  // Called by remote-server: write the auto-continue config
   (global as any).__setAutoContinueConfig = (sessionId: string, config: any): void => {
     safeSend('auto-continue:set', sessionId, config);
   };
 
-  // 供 remote-server 调用：读取会话状态（busy/unread/idle）
-  // renderer 通过 IPC 同步状态到这里
+  // Called by remote-server: read session status (busy/unread/idle)
+  // The renderer syncs status here via IPC
   (global as any).__sessionStatuses = {} as Record<string, string>;
   ipcMain.on('session:sync-status', (_e, statuses: Record<string, string>) => {
     (global as any).__sessionStatuses = statuses;
@@ -1359,7 +1571,7 @@ function registerIPC(): void {
   });
 
   ipcMain.handle('chat:destroy', (_e, sessionId: string) => {
-    // 保存到已关闭列表后再销毁
+    // Save to the closed list before destroying
     const session = chatSessionManager?.getSession(sessionId);
     if (session && session.messages.length > 0) {
       addClosedChatSession({
@@ -1407,7 +1619,7 @@ function registerIPC(): void {
 app.whenReady().then(async () => {
   await setupPtyManager();
 
-  // macOS Dock 图标 — 在窗口创建前设置
+  // macOS Dock icon — set before creating the window
   const appIcon = loadAppIcon();
   currentAppIcon = appIcon;
   if (appIcon) {
@@ -1417,7 +1629,7 @@ app.whenReady().then(async () => {
   }
   createTray();
 
-  // 自动启动 Windsurf 代理
+  // Auto-start the Windsurf proxy
   windsurfProxyManager = new WindsurfProxyManager((running, error) => {
     if (running) {
       console.log('[Main] Windsurf proxy is ready');
@@ -1434,10 +1646,10 @@ app.whenReady().then(async () => {
     console.log('[Main] Windsurf proxy directory not found, chat features will be unavailable');
   }
 
-  // 挂到 global 上供 remote-server 和 chat-session-manager 使用
+  // Attach to global for use by remote-server and chat-session-manager
   (global as any).__windsurfProxyManager = windsurfProxyManager;
 
-  // 初始化 Chat Session Manager
+  // Initialize the Chat Session Manager
   chatSessionManager = new ChatSessionManager({
     onDelta: (sessionId, text) => {
       safeSend('chat:delta', sessionId, text);
@@ -1453,22 +1665,22 @@ app.whenReady().then(async () => {
     },
   }, () => loadAiPreferenceData().manualConfig || null);
 
-  // 挂到 global 上供 remote-server 使用
+  // Attach to global for use by remote-server
   (global as any).__chatSessionManager = chatSessionManager;
 
   registerIPC();
   cloudflaredManager = new CloudflaredManager(path.join(__dirname, '../..'));
   createWindow(appIcon);
 
-  // 启动远程访问服务器（手机端）
+  // Start the remote-access server (mobile)
   startRemoteServer(ptyManager, (sessionInfo) => {
-    // 手机端创建了会话，通知桌面端 renderer 刷新
+    // The mobile client created a session; notify the desktop renderer to refresh
     safeSend('pty:remote-created', sessionInfo);
   }, (id) => {
-    // 手机端销毁了会话，通知桌面端 renderer
+    // The mobile client destroyed a session; notify the desktop renderer
     safeSend('pty:exit', id);
   }, (info) => {
-    // 服务器启动后，把连接信息发送给渲染进程显示
+    // After the server starts, send the connection info to the renderer for display
     const tunnel = cloudflaredManager?.start();
     const serverInfo: RemoteServerInfoWithTunnel = {
       ...info,
@@ -1494,7 +1706,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // AI 配置已保存在偏好文件中，无需额外恢复
+  // The AI config is already saved in the preference file; no extra restore needed
 
 });
 

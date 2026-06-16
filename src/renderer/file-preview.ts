@@ -1,4 +1,4 @@
-// 右侧只读文件预览（CodeMirror 6）
+// Right-side read-only file preview (CodeMirror 6)
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, lineNumbers, highlightActiveLine } from '@codemirror/view';
 import { syntaxHighlighting, defaultHighlightStyle, foldGutter } from '@codemirror/language';
@@ -11,7 +11,7 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { yaml } from '@codemirror/lang-yaml';
 
-// 按扩展名挑选语言扩展。未知类型返回空（纯文本）。
+// Pick a language extension by file extension. Unknown types return empty (plain text).
 function languageForExt(ext: string) {
   switch (ext) {
     case 'md':
@@ -48,7 +48,7 @@ export interface FilePreview {
   destroy(): void;
 }
 
-// 在给定容器内挂载一个只读 CodeMirror 编辑器。
+// Mount a read-only CodeMirror editor inside the given container.
 export function createFilePreview(parent: HTMLElement): FilePreview {
   const language = new Compartment();
   const view = new EditorView({

@@ -44,8 +44,8 @@ export class CloudflaredManager {
   }
 
   start(): CloudflaredStatus {
-    // 启动前清理：杀掉旧实例残留的 cloudflared 进程
-    // 注意：9800 端口由 remote-server 启动前自行清理，此处不应再碰，否则会杀掉当前 Electron 进程
+    // Cleanup before start: kill cloudflared processes left over from old instances
+    // Note: port 9800 is cleaned up by remote-server before it starts; do not touch it here, or it would kill the current Electron process
     this.killStaleCloudflared();
 
     const bin = this.resolveBinary();
@@ -58,7 +58,7 @@ export class CloudflaredManager {
         running: false,
         url: publicUrl,
         configPath: this.configPath,
-        message: `找不到 cloudflared 配置: ${this.configPath}`,
+        message: `cloudflared config not found: ${this.configPath}`,
       };
     }
     if (!this.isConfigReady(config.raw)) {
@@ -67,7 +67,7 @@ export class CloudflaredManager {
         running: false,
         url: publicUrl,
         configPath: this.configPath,
-        message: `Cloudflare 配置未完成，请填写本机私有配置: ${this.configPath}`,
+        message: `Cloudflare config incomplete; please fill in your local private config: ${this.configPath}`,
       };
     }
     if (this.isRunning()) return this.getStatus();
@@ -93,21 +93,21 @@ export class CloudflaredManager {
 
   stopOwnedProcess(): void {
     if (!this.child || this.child.killed) return;
-    // 杀掉整个进程组（cloudflared 可能 spawn 子进程）
+    // Kill the entire process group (cloudflared may spawn child processes)
     if (this.child.pid) {
       try { process.kill(-this.child.pid, 'SIGKILL'); } catch { /* ignore */ }
       try { process.kill(this.child.pid, 'SIGKILL'); } catch { /* ignore */ }
     }
     try { this.child.kill('SIGKILL'); } catch { /* ignore */ }
     this.child = null;
-    // 确保残留的 cloudflared 进程也被清理
+    // Ensure any leftover cloudflared processes are cleaned up too
     this.killStaleCloudflared();
   }
 
-  /** 杀掉旧 DuoCLI 实例残留的 cloudflared 进程 */
+  /** Kill cloudflared processes left over from old Posse instances */
   private killStaleCloudflared(): void {
     try {
-      // 匹配与此 config 相关的 cloudflared tunnel 进程
+      // Match cloudflared tunnel processes related to this config
       const out = execSync(
         `pgrep -f 'cloudflared.*cloudflared-config' 2>/dev/null || true`,
         { encoding: 'utf-8', timeout: 5000 },
@@ -118,15 +118,15 @@ export class CloudflaredManager {
           process.kill(pid, 'SIGKILL');
           console.log(`[Cloudflared] Killed stale cloudflared PID ${pid}`);
         } catch {
-          // 进程可能已不存在
+          // Process may no longer exist
         }
       }
     } catch {
-      // pgrep 失败，忽略
+      // pgrep failed, ignore
     }
   }
 
-  /** 杀掉占用指定端口的进程 */
+  /** Kill the process occupying the given port */
   private killPortOccupants(port: number): void {
     try {
       const out = execSync(`lsof -i :${port} -t -sTCP:LISTEN 2>/dev/null || true`, {
@@ -139,11 +139,11 @@ export class CloudflaredManager {
           process.kill(pid, 'SIGKILL');
           console.log(`[Cloudflared] Killed port ${port} occupant PID ${pid}`);
         } catch {
-          // 进程可能已不存在
+          // Process may no longer exist
         }
       }
     } catch {
-      // lsof 失败，忽略
+      // lsof failed, ignore
     }
   }
 
@@ -166,7 +166,7 @@ export class CloudflaredManager {
 
   private resolveBinary(): string | null {
     const candidates = [
-      process.env.DUOCLI_CLOUDFLARED_BIN || '',
+      process.env.POSSE_CLOUDFLARED_BIN || '',
       '/opt/homebrew/bin/cloudflared',
       '/usr/local/bin/cloudflared',
       'cloudflared',
@@ -217,10 +217,10 @@ export class CloudflaredManager {
     configReady: boolean,
     config: { exists: boolean; hostname: string | null },
   ): string | undefined {
-    if (!installed) return 'cloudflared 未安装，请先运行: brew install cloudflared';
-    if (!config.exists) return `找不到 cloudflared 配置: ${this.configPath}`;
-    if (!configReady) return `Cloudflare 配置未完成，请填写本机私有配置: ${this.configPath}`;
-    if (!config.hostname) return `Cloudflare 配置缺少 hostname: ${this.configPath}`;
+    if (!installed) return 'cloudflared is not installed; run: brew install cloudflared';
+    if (!config.exists) return `cloudflared config not found: ${this.configPath}`;
+    if (!configReady) return `Cloudflare config incomplete; please fill in your local private config: ${this.configPath}`;
+    if (!config.hostname) return `Cloudflare config is missing hostname: ${this.configPath}`;
     return undefined;
   }
 }

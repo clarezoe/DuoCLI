@@ -7,7 +7,8 @@ const pkg = require('../package.json');
 const version = pkg.version;
 const root = path.resolve(__dirname, '..');
 const releaseDir = path.join(root, 'release', 'mac-arm64');
-const appName = 'DuoCLI';
+const appName = 'Posse';
+const legacyAppName = 'DuoCLI';
 const sourceApp = path.join(releaseDir, `${appName}.app`);
 const applicationsDirs = ['/Applications'];
 const legacyVersionedReleaseApp = path.join(releaseDir, `${appName}-${version}.app`);
@@ -15,6 +16,11 @@ const legacyVersionedInstalledApps = [
   path.join('/Applications', `${appName}-${version}.app`),
   path.join(os.homedir(), 'Applications', `${appName}.app`),
   path.join(os.homedir(), 'Applications', `${appName}-${version}.app`),
+  // Old-name bundles from before the DuoCLI -> Posse rebrand
+  path.join('/Applications', `${legacyAppName}.app`),
+  path.join('/Applications', `${legacyAppName}-${version}.app`),
+  path.join(os.homedir(), 'Applications', `${legacyAppName}.app`),
+  path.join(os.homedir(), 'Applications', `${legacyAppName}-${version}.app`),
 ];
 
 if (!fs.existsSync(sourceApp)) {
