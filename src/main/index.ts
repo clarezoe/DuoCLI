@@ -1337,15 +1337,16 @@ function registerIPC(): void {
           // Best-effort: keep going even if one capture fails.
         }
         const session = ptyManager.getSession(live.id) || live;
-        if (session.resumeId) {
-          addClosedSession({
-            title: session.title,
-            cwd: session.cwd,
-            presetCommand: session.presetCommand,
-            resumeId: session.resumeId,
-            resumeCommand: session.resumeCommand || '',
-          });
-        }
+        // Persist EVERY live session, even without a captured resumeId. Entries
+        // without a resume id are re-opened as a fresh terminal in the original
+        // cwd running the original command (handled in restoreClosedSession).
+        addClosedSession({
+          title: session.title,
+          cwd: session.cwd,
+          presetCommand: session.presetCommand,
+          resumeId: session.resumeId || '',
+          resumeCommand: session.resumeCommand || '',
+        });
       }
 
       // 2-3. Stop the old daemon and start a fresh one, reconnecting events.
@@ -1579,6 +1580,64 @@ function registerIPC(): void {
         .slice(0, MAX_SESSIONS);
     } catch {
       return [];
+    }
+  });
+
+  // Verify a session id is actually resumable in the given cwd. Agents store
+  // sessions per-cwd (claude/kiro) — resuming in the wrong folder silently
+  // starts a FRESH empty session, so the renderer pre-validates and warns.
+  // Fail-open: on any error / unknown agent return { exists: true }.
+  ipcMain.handle('session:verify-resumable', (_e, agent: string, cwd: string, sessionId: string): { exists: boolean } => {
+    try {
+      const id = String(sessionId || '').trim();
+      if (!id) return { exists: true };
+      const a = String(agent || '').trim().toLowerCase();
+
+      if (a === 'claude') {
+        const abs = path.resolve(String(cwd || ''));
+        const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-');
+        const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
+        const direct = path.join(dir, `${id}.jsonl`);
+        if (fs.existsSync(direct)) return { exists: true };
+        // Also accept if a file containing the uuid is found by scanning the dir.
+        if (fs.existsSync(dir)) {
+          const found = fs.readdirSync(dir).some((name) => name.includes(id) && name.endsWith('.jsonl'));
+          return { exists: found };
+        }
+        return { exists: false };
+      }
+
+      if (a === 'codex') {
+        // Codex is date-bucketed (not cwd-bucketed): verify the uuid file exists
+        // anywhere under ~/.codex/sessions. cwd match is informational only.
+        const sessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
+        if (!fs.existsSync(sessionsRoot)) return { exists: false };
+        const found = (function scan(dir: string, depth: number): boolean {
+          if (depth > 5) return false;
+          let entries: fs.Dirent[];
+          try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+          for (const ent of entries) {
+            const full = path.join(dir, ent.name);
+            if (ent.isDirectory()) {
+              if (scan(full, depth + 1)) return true;
+            } else if (ent.name.includes(id) && ent.name.endsWith('.jsonl')) {
+              return true;
+            }
+          }
+          return false;
+        })(sessionsRoot, 0);
+        return { exists: found };
+      }
+
+      if (a === 'kiro') {
+        const file = path.join(os.homedir(), '.kiro', 'sessions', 'cli', `${id}.json`);
+        return { exists: fs.existsSync(file) };
+      }
+
+      // copilot / unknown: can't reliably verify — don't block.
+      return { exists: true };
+    } catch {
+      return { exists: true };
     }
   });
 

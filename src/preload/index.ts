@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('posse', {
   claudeSessionsList: (cwd: string) => ipcRenderer.invoke('claude-sessions:list', cwd),
   // Projects-first discovery: every AI-CLI session bucketed by project folder
   projectsList: (extra?: { extraFolders?: string[] }) => ipcRenderer.invoke('projects:list', extra),
+  // Verify a session id is resumable in the given cwd (warn before a wrong-folder resume)
+  verifyResumable: (agent: string, cwd: string, sessionId: string) =>
+    ipcRenderer.invoke('session:verify-resumable', agent, cwd, sessionId),
   // Sync recent directories to the mobile remote service
   remoteAddRecentCwd: (cwd: string) => ipcRenderer.invoke('remote:add-recent-cwd', cwd),
 

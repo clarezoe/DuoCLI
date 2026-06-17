@@ -43,6 +43,7 @@ declare global {
         lastActiveMs: number;
       }>>;
       remoteAddRecentCwd: (cwd: string) => Promise<boolean>;
+      verifyResumable: (agent: string, cwd: string, sessionId: string) => Promise<{ exists: boolean }>;
       onPtyData: (cb: (id: string, data: string) => void) => void;
       onTitleUpdate: (cb: (id: string, title: string) => void) => void;
       onPtyExit: (cb: (id: string) => void) => void;
@@ -2601,17 +2602,58 @@ function attachPtySession(info: PtySessionInfo, createdAt: number, replayRawBuff
   }
 }
 
+// Extract the agent + session id from a captured resume command, so we can
+// verify the on-disk session exists before resuming.
+function parseResumeCommand(cmd: string): { agent: string; id: string } | null {
+  const c = String(cmd || '').trim();
+  let m: RegExpMatchArray | null;
+  if ((m = c.match(/\bclaude\b.*?--resume\s+(\S+)/))) return { agent: 'claude', id: m[1] };
+  if ((m = c.match(/\bcodex\b\s+resume\s+(\S+)/))) return { agent: 'codex', id: m[1] };
+  if ((m = c.match(/\bcopilot\b.*?--resume\s+(\S+)/))) return { agent: 'copilot', id: m[1] };
+  if ((m = c.match(/\bkiro-cli\b.*?--resume-id\s+(\S+)/))) return { agent: 'kiro', id: m[1] };
+  return null;
+}
+
+// Returns true if the session is resumable in cwd, OR if it can't be verified
+// (fail-open). Only returns false when the agent confirms the session is absent.
+async function verifyResumableSession(agent: string, cwd: string, sessionId: string): Promise<boolean> {
+  try {
+    const res = await window.posse.verifyResumable(agent, cwd, sessionId);
+    return res.exists !== false;
+  } catch {
+    return true;
+  }
+}
+
 // Resume a closed session
 async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
-  // Prefer the full resume command captured from terminal output, fall back to building one
-  const resumeCmd = cs.resumeCommand
-    || (cs.presetCommand
-      ? `${cs.presetCommand} --resume ${cs.resumeId}`
-      : `claude --resume ${cs.resumeId}`);
   const cwd = cs.cwd || sessionCwds.get(termManager.getActiveId() || '') || '';
   const themeId = resolveThemeId(currentThemeId, cwd);
 
-  const result = await window.posse.createPty(cwd, resumeCmd, themeId);
+  // Decide between a true resume vs a fresh re-open in the original folder.
+  let command: string;
+  const hasResume = Boolean(cs.resumeId || cs.resumeCommand);
+  if (hasResume) {
+    // Prefer the full resume command captured from terminal output, fall back to building one
+    command = cs.resumeCommand
+      || (cs.presetCommand
+        ? `${cs.presetCommand} --resume ${cs.resumeId}`
+        : `claude --resume ${cs.resumeId}`);
+
+    // Validate the session still exists in this cwd before resuming, else warn
+    // instead of silently spawning a fresh empty session.
+    const parsed = parseResumeCommand(command);
+    if (parsed && !(await verifyResumableSession(parsed.agent, cwd, parsed.id))) {
+      window.alert(`Cannot resume: session ${parsed.id} not found in ${cwd}. It may have been created in a different folder.`);
+      return;
+    }
+  } else {
+    // No resume id: re-open a fresh terminal in the original folder running the
+    // original command (or a plain shell when no preset was recorded).
+    command = cs.presetCommand || '';
+  }
+
+  const result = await window.posse.createPty(cwd, command, themeId);
   const now = Date.now();
   attachPtySession({ ...result, title: cs.title, displayName: cs.displayName || result.displayName }, now);
   if (cwd) { selectedProjectPath = cwd; setProjectExpanded(normalizeCwd(cwd), true); }
@@ -2656,6 +2698,13 @@ async function resumeAgentSession(s: ClaudeHistorySession): Promise<void> {
       switchSession(ptyId);
       return;
     }
+  }
+
+  // Validate the on-disk session exists in this cwd before resuming, else warn
+  // instead of silently launching a fresh empty session.
+  if (!(await verifyResumableSession(s.agent, s.cwd, s.id))) {
+    window.alert(`Cannot resume: session ${s.id} not found in ${s.cwd}. It may have been created in a different folder.`);
+    return;
   }
 
   const themeId = resolveThemeId(currentThemeId, s.cwd);
