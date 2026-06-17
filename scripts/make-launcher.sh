@@ -50,5 +50,13 @@ plutil -replace LSUIElement -bool true "${APP_PATH}/Contents/Info.plist" \
 # Re-sign ad-hoc: editing Info.plist invalidates osacompile's signature.
 codesign --force --deep -s - "$APP_PATH" 2>/dev/null || true
 
+# Bust the icon cache so Finder/Dock pick up applet.icns instead of the generic
+# AppleScript-applet icon. Overwriting the .icns in place is not enough — macOS
+# caches by bundle, so bump mtime, re-register with LaunchServices, refresh Dock.
+touch "$APP_PATH"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$APP_PATH" >/dev/null 2>&1 || true
+killall Dock >/dev/null 2>&1 || true
+
 echo "Built: ${APP_PATH}"
 echo "Double-click it (or Spotlight 'Posse') to launch the latest source build."
