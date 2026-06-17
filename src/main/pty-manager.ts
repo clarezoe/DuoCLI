@@ -175,6 +175,25 @@ export function writeClaudeSessionTitle(uuid: string, title: string): void {
   }
 }
 
+// Best-effort: propagate a user rename into Codex's own session index so Codex's
+// thread/resume picker shows the same title. Codex stores each session's editable
+// title as `thread_name` in ~/.codex/session_index.jsonl (one JSON object per line,
+// last line for a given id wins), so appending a fresh line applies the rename.
+export function writeCodexSessionTitle(uuid: string, title: string): void {
+  const trimmed = (title || '').trim();
+  if (!trimmed || !uuid) return;
+  try {
+    const codexDir = path.join(os.homedir(), '.codex');
+    if (!fs.existsSync(codexDir)) return; // Codex not installed; nothing to write.
+    const target = path.join(codexDir, 'session_index.jsonl');
+    const line =
+      JSON.stringify({ id: uuid, thread_name: trimmed, updated_at: new Date().toISOString() }) + '\n';
+    fs.appendFileSync(target, line, 'utf-8');
+  } catch {
+    // Best-effort; never throw or block the rename.
+  }
+}
+
 // Best-effort: find the on-disk agent session id for a session whose PTY was spawned at `spawnedAt`.
 // Returns the newest matching session file's uuid for that agent in that cwd, created/updated after spawn.
 function findAgentSessionIdOnDisk(
@@ -715,6 +734,8 @@ export class PtyManager {
     this.events.onTitleUpdate(id, title);
     if (agentKindFromCommand(session.presetCommand) === 'claude' && session.agentSessionId) {
       writeClaudeSessionTitle(session.agentSessionId, title);
+    } else if (agentKindFromCommand(session.presetCommand) === 'codex' && session.agentSessionId) {
+      writeCodexSessionTitle(session.agentSessionId, title);
     }
   }
 

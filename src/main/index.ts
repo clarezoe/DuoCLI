@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell, glo
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getDisplayName, rotateDevinInstallationId, writeClaudeSessionTitle } from './pty-manager';
+import { getDisplayName, rotateDevinInstallationId, writeClaudeSessionTitle, writeCodexSessionTitle } from './pty-manager';
 import { PtyBackend } from './pty-backend';
 import { PtyDaemonClient } from './pty-daemon-client';
 import { loadOrCreatePtyDaemonConfig } from './pty-daemon-config';
@@ -1493,10 +1493,15 @@ function registerIPC(): void {
       s.id === id ? { ...s, title: newTitle } : s
     );
     saveClosedSessions(sessions);
-    // Propagate into Claude's own session file for closed Claude sessions.
+    // Propagate into the agent's own session file for closed Claude / Codex sessions.
     const target = sessions.find(s => s.id === id);
-    if (target && /^claude\b/i.test((target.presetCommand || '').trim()) && target.resumeId) {
-      writeClaudeSessionTitle(target.resumeId, newTitle);
+    const cmd = (target?.presetCommand || '').trim();
+    if (target && target.resumeId) {
+      if (/^claude\b/i.test(cmd)) {
+        writeClaudeSessionTitle(target.resumeId, newTitle);
+      } else if (/^codex\b/i.test(cmd)) {
+        writeCodexSessionTitle(target.resumeId, newTitle);
+      }
     }
     return sessions;
   });
