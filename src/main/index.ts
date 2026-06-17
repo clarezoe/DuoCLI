@@ -942,6 +942,32 @@ function resolveClaudeTitle(
   return uuid;
 }
 
+// Cache resolved Claude session titles keyed by absolute file path. A cached entry is valid
+// only while the file's mtimeMs AND size are unchanged — when Claude appends (rename, new
+// ai-title, more messages) the mtime/size change, the lookup misses, and we re-scan for a fresh
+// title. No manual invalidation needed. Capped to avoid unbounded growth.
+const claudeTitleCache = new Map<string, { mtimeMs: number; size: number; title: string }>();
+const CLAUDE_TITLE_CACHE_MAX_ENTRIES = 2000;
+
+// Lookup-or-(scan-and-store). Reuses the mtimeMs/size the caller already statted (no double
+// stat). On a hit (same path + mtimeMs + size) returns the cached title without reading the
+// file; on a miss runs `compute()` (the head + full/tail scan) and caches the result.
+function getCachedClaudeTitle(
+  filePath: string,
+  mtimeMs: number,
+  size: number,
+  compute: () => string
+): string {
+  const cached = claudeTitleCache.get(filePath);
+  if (cached && cached.mtimeMs === mtimeMs && cached.size === size) {
+    return cached.title;
+  }
+  const title = compute();
+  if (claudeTitleCache.size > CLAUDE_TITLE_CACHE_MAX_ENTRIES) claudeTitleCache.clear();
+  claudeTitleCache.set(filePath, { mtimeMs, size, title });
+  return title;
+}
+
 // --- Claude: ~/.claude/projects/<enc>/<uuid>.jsonl ; real cwd from in-file `cwd` ---
 function discoverClaudeSessions(): DiscoveredSession[] {
   const MAX_FILES = 300;
@@ -1002,8 +1028,10 @@ function discoverClaudeSessions(): DiscoveredSession[] {
         }
         // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
         // the head window. Scan the whole file (or tail for huge files) to recover them.
-        const titleFields = findClaudeTitleFields(f.full, f.size);
-        const title = resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, f.uuid);
+        const title = getCachedClaudeTitle(f.full, f.mtimeMs, f.size, () => {
+          const titleFields = findClaudeTitleFields(f.full, f.size);
+          return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, f.uuid);
+        });
         out.push({
           agent: 'claude',
           cwd: cwd ? path.resolve(cwd) : '',
@@ -1566,33 +1594,34 @@ function registerIPC(): void {
   ipcMain.handle('claude-sessions:list', (_e, cwd: string) => {
     const MAX_SESSIONS = 40;
 
-    const parseTitle = (filePath: string, size: number, uuid: string): string => {
-      try {
-        // Head read: first-real-user-message fallback + legacy rename marker.
-        const head = readHead(filePath);
-        let firstUserTitle = '';
-        let renameTitle = '';
-        for (const line of head.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let obj: { type?: string; message?: { content?: unknown } };
-          try { obj = JSON.parse(trimmed); } catch { continue; }
-          if (obj.type === 'user' && typeof obj.message?.content === 'string') {
-            const r = extractRenameTitle(obj.message.content);
-            if (r) renameTitle = r;
-            if (!firstUserTitle) {
-              const cleaned = cleanSessionTitle(obj.message.content);
-              if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
+    const parseTitle = (filePath: string, size: number, mtimeMs: number, uuid: string): string =>
+      getCachedClaudeTitle(filePath, mtimeMs, size, () => {
+        try {
+          // Head read: first-real-user-message fallback + legacy rename marker.
+          const head = readHead(filePath);
+          let firstUserTitle = '';
+          let renameTitle = '';
+          for (const line of head.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            let obj: { type?: string; message?: { content?: unknown } };
+            try { obj = JSON.parse(trimmed); } catch { continue; }
+            if (obj.type === 'user' && typeof obj.message?.content === 'string') {
+              const r = extractRenameTitle(obj.message.content);
+              if (r) renameTitle = r;
+              if (!firstUserTitle) {
+                const cleaned = cleanSessionTitle(obj.message.content);
+                if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
+              }
             }
           }
-        }
-        // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
-        // the head window. Scan the whole file (or tail for huge files) to recover them.
-        const titleFields = findClaudeTitleFields(filePath, size);
-        return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, uuid);
-      } catch { /* ignore, fall through to uuid */ }
-      return uuid;
-    };
+          // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
+          // the head window. Scan the whole file (or tail for huge files) to recover them.
+          const titleFields = findClaudeTitleFields(filePath, size);
+          return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, uuid);
+        } catch { /* ignore, fall through to uuid */ }
+        return uuid;
+      });
 
     try {
       const abs = path.resolve(String(cwd || ''));
@@ -1619,7 +1648,7 @@ function registerIPC(): void {
         const uuid = e.name.replace(/\.jsonl$/, '');
         return {
           id: uuid,
-          title: parseTitle(e.full, e.size, uuid),
+          title: parseTitle(e.full, e.size, e.mtimeMs, uuid),
           cwd: abs,
           mtimeMs: e.mtimeMs,
           agent: 'claude' as const,
