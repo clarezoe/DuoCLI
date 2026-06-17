@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PtyManager } from './pty-manager';
 import { loadOrCreatePtyDaemonConfig, savePtyDaemonConfig } from './pty-daemon-config';
@@ -97,6 +98,44 @@ app.post('/shutdown', requireAuth, (_req, res) => {
       server.close();
     } catch {
       // ignore
+    }
+    process.exit(0);
+  }, 200);
+});
+
+app.post('/restart', requireAuth, (_req, res) => {
+  // Like /shutdown, but spawns a fresh detached successor daemon before
+  // exiting, so the daemon revives itself even when the Electron app is closed
+  // (the standalone browser terminal client relies on this).
+  for (const session of ptyManager.getAllSessions()) {
+    try {
+      ptyManager.captureResumeFromBuffer(session.id);
+    } catch {
+      // ignore per-session capture failures; keep restarting cleanly
+    }
+  }
+  res.json({ ok: true });
+  // Respond first, then close the server and spawn the successor after a short
+  // delay so the HTTP response flushes and the port frees before the new
+  // process tries to bind it.
+  setTimeout(() => {
+    try {
+      server.close();
+    } catch {
+      // ignore
+    }
+    try {
+      // Self-target __filename so the running daemon image respawns itself.
+      // process.env already carries ELECTRON_RUN_AS_NODE=1 and
+      // POSSE_PTY_DAEMON_CONFIG from the original spawn.
+      const child = spawn(process.execPath, [__filename], {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env },
+      });
+      child.unref();
+    } catch (error) {
+      console.error('[PtyDaemon] failed to spawn successor:', error);
     }
     process.exit(0);
   }, 200);
@@ -211,14 +250,28 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => eventClients.delete(ws));
 });
 
-server.listen(config.port, '127.0.0.1', () => {
-  console.log(`[PtyDaemon] listening on 127.0.0.1:${config.port}`);
-});
+// Bounded retry on EADDRINUSE: a self-respawned successor may briefly race the
+// dying predecessor that still holds the port. Retry listen every ~200ms for up
+// to ~5s before giving up. Any other listen error is fatal.
+const LISTEN_RETRY_DEADLINE_MS = Date.now() + 5000;
+
+function startListening(): void {
+  server.listen(config.port, '127.0.0.1', () => {
+    console.log(`[PtyDaemon] listening on 127.0.0.1:${config.port}`);
+  });
+}
 
 server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE' && Date.now() < LISTEN_RETRY_DEADLINE_MS) {
+    console.warn('[PtyDaemon] port in use, retrying listen in 200ms…');
+    setTimeout(startListening, 200);
+    return;
+  }
   console.error('[PtyDaemon] failed to start:', error.code, error.message);
   process.exit(1);
 });
+
+startListening();
 
 process.on('SIGTERM', () => {
   server.close(() => process.exit(0));

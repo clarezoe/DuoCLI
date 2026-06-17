@@ -465,7 +465,7 @@ async function restartDaemon(): Promise<void> {
   setStatus('Restarting…', '');
 
   try {
-    await fetch('/shutdown', { method: 'POST', headers: authHeaders() });
+    await fetch('/restart', { method: 'POST', headers: authHeaders() });
   } catch {
     // The daemon may drop the connection while exiting — that's expected.
   }
@@ -481,8 +481,8 @@ async function restartDaemon(): Promise<void> {
     eventSocket = null;
   }
 
-  // Poll /terminal/config until the respawned daemon (started by the main
-  // Posse app's reconnect logic) is up, with a ~15s timeout.
+  // Poll /terminal/config until the self-respawned daemon is up, with a ~15s
+  // timeout.
   const deadlineMs = Date.now() + 15000;
   // Give the old process a moment to exit and free the port first.
   await sleep(600);
@@ -505,8 +505,8 @@ async function restartDaemon(): Promise<void> {
     await sleep(700);
   }
 
-  // Timed out — the main app likely isn't running to respawn the daemon.
-  setStatus('Daemon down — open the Posse app', 'error');
+  // Timed out waiting for the successor daemon to bind the port.
+  setStatus('Daemon did not come back', 'error');
   restarting = false;
   restartDaemonBtn.disabled = false;
   refreshBtn.disabled = false;
