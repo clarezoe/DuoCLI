@@ -155,6 +155,70 @@ function killPortOccupants(port: number): void {
   }
 }
 
+// ========== Tailscale integration ==========
+// Off-LAN mobile access uses the user's OWN Tailscale node over https (tailscale serve + MagicDNS),
+// 不再硬编码任何第三方域名。Tailscale 未安装/未运行属正常情况，全部 try/catch 静默降级。
+
+// 定位 Tailscale CLI：先 PATH，再 GUI bundle 与常见 Homebrew 路径
+function resolveTailscaleCli(): string | null {
+  const candidates = [
+    'tailscale',
+    '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+    '/usr/local/bin/tailscale',
+    '/opt/homebrew/bin/tailscale',
+  ];
+  for (const cli of candidates) {
+    try {
+      execFileSync(cli, ['version'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+      return cli;
+    } catch {
+      // 该路径不可用，尝试下一个
+    }
+  }
+  return null;
+}
+
+// 读取本机 Tailscale 节点信息（MagicDNS 名 + 100.x IPv4），失败返回 null
+function getTailscaleInfo(): { dnsName: string; ip: string } | null {
+  const cli = resolveTailscaleCli();
+  if (!cli) return null;
+  try {
+    const out = execFileSync(cli, ['status', '--json'], { encoding: 'utf8', timeout: 5000 });
+    const status = JSON.parse(out);
+    const self = status?.Self;
+    if (!self) return null;
+    // DNSName 形如 "host.tailnet.ts.net."，去掉末尾单个点
+    const rawDns = typeof self.DNSName === 'string' ? self.DNSName : '';
+    const dnsName = rawDns.replace(/\.$/, '');
+    if (!dnsName) return null;
+    // TailscaleIPs 里挑 IPv4（100.x，不含冒号）
+    const ips: string[] = Array.isArray(self.TailscaleIPs) ? self.TailscaleIPs : [];
+    const ip = ips.find(a => typeof a === 'string' && !a.includes(':')) || '';
+    return { dnsName, ip };
+  } catch {
+    return null;
+  }
+}
+
+// 确保 tailscale serve 把 https://443 反代到本机端口，幂等且永不抛错（不能阻塞 server 启动）
+function ensureTailscaleServe(cli: string, port: number): void {
+  try {
+    const serveStatus = execFileSync(cli, ['serve', 'status'], { encoding: 'utf8', timeout: 5000 });
+    // 已经代理到本端口则跳过
+    if (serveStatus.includes(`127.0.0.1:${port}`) || serveStatus.includes(`localhost:${port}`)) {
+      return;
+    }
+  } catch {
+    // serve status 失败（如 "No serve config"）时继续尝试配置
+  }
+  try {
+    execFileSync(cli, ['serve', '--bg', '--https=443', `http://127.0.0.1:${port}`], { encoding: 'utf8', timeout: 10000 });
+    console.log('[RemoteServer] tailscale serve configured: https://443 ->', `127.0.0.1:${port}`);
+  } catch (e: any) {
+    console.warn('[RemoteServer] tailscale serve setup failed (ignored):', e?.message || e);
+  }
+}
+
 // Get this machine's LAN IP
 function getLocalIP(): string {
   const interfaces = os.networkInterfaces();
@@ -187,6 +251,7 @@ interface RemoteConfig {
   pushSubscriptions: webpush.PushSubscription[];
   recentCwds: string[];
   customPresets: CustomPreset[];
+  tailscaleServe?: boolean; // 是否自动配置 tailscale serve，默认 ON（仅当显式设为 false 时关闭）
 }
 
 function generateAccessToken(): string {
@@ -206,6 +271,7 @@ function loadOrCreateConfig(): RemoteConfig {
         pushSubscriptions: Array.isArray(raw.pushSubscriptions) ? raw.pushSubscriptions : [],
         recentCwds: Array.isArray(raw.recentCwds) ? raw.recentCwds.filter(Boolean).slice(0, 20) : [],
         customPresets: Array.isArray(raw.customPresets) ? raw.customPresets : [],
+        tailscaleServe: raw.tailscaleServe,
       };
     } catch {}
   }
@@ -469,7 +535,11 @@ export function startRemoteServer(
         }
       }
     }
-    res.json({ lanIps, port: PORT, hostname: os.hostname() });
+    // Tailscale 节点信息（供 off-LAN 移动端走自己的 *.ts.net https 入口，而非任何第三方域名）
+    const ts = getTailscaleInfo();
+    const tailscaleUrl = ts && ts.dnsName ? `https://${ts.dnsName}` : null;
+    const tailscaleIp = ts && ts.ip ? ts.ip : null;
+    res.json({ lanIps, port: PORT, hostname: os.hostname(), tailscaleUrl, tailscaleIp });
   });
 
   // 1x1 transparent PNG for the mobile <img> probe (on an HTTPS page, fetching HTTP is blocked
@@ -952,6 +1022,14 @@ export function startRemoteServer(
 
   // ========== Startup ==========
 
+  // server 监听成功后，尝试配置 tailscale serve（默认 ON，config.tailscaleServe === false 时关闭）
+  const maybeSetupTailscaleServe = (): void => {
+    if (config.tailscaleServe === false) return;
+    const cli = resolveTailscaleCli();
+    if (!cli || !getTailscaleInfo()) return; // Tailscale 未安装/未运行，跳过
+    ensureTailscaleServe(cli, PORT);
+  };
+
   // Cleanup before start: kill the port-9800 process left over from an old Posse instance
   killPortOccupants(PORT);
 
@@ -965,6 +1043,7 @@ export function startRemoteServer(
         server.listen(PORT, '0.0.0.0', () => {
           const lanUrl = `http://${LOCAL_IP}:${PORT}`;
           console.log('[RemoteServer] Server started (retry), URL:', lanUrl);
+          maybeSetupTailscaleServe();
           if (onServerStarted) {
             const serverInfo = { lanUrl, token: config.token, port: PORT };
             onServerStarted(serverInfo);
@@ -978,6 +1057,7 @@ export function startRemoteServer(
   server.listen(PORT, '0.0.0.0', () => {
     const lanUrl = `http://${LOCAL_IP}:${PORT}`;
     console.log('[RemoteServer] Server started, URL:', lanUrl);
+    maybeSetupTailscaleServe();
     // Return connection info via callback, no longer printed to the terminal
     if (onServerStarted) {
       const serverInfo = { lanUrl, token: config.token, port: PORT };
