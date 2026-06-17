@@ -423,13 +423,15 @@ function logout() {
 const LanSwitcher = (() => {
   const PROBE_INTERVAL_LAN_MS = 5 * 1000;
   const PROBE_TIMEOUT_MS = 2000;
-  const STORAGE_CLOUD_URL = 'duocli_cloud_url';   // 上次的 CF 入口（origin）
+  const STORAGE_CLOUD_URL = 'duocli_cloud_url';   // 上次的远程入口 origin（用户自定义 cloud URL；非特指 CF）
   const STORAGE_LAST_LAN_IP = 'duocli_last_lan_ip'; // 上次成功用过的 LAN IP
+  const STORAGE_TS_URL = 'posse_tailscale_url';   // 本机 Tailscale https 入口（来自 /api/lan-info）
 
   let probeTimer = null;
 
+  // 私有/可信内网 IP：含回环、RFC1918，以及 Tailscale CGNAT 100.64.0.0/10（100.64.x ~ 100.127.x）
   function isPrivateIp(host) {
-    return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+    return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(host);
   }
 
   function isLocalHostname(host) {
@@ -490,6 +492,10 @@ const LanSwitcher = (() => {
       showCopyToast('拿不到局域网信息（token 失效？）');
       return;
     }
+    // 记下本机 Tailscale https 入口（供 off-LAN 时切到用户自己的节点，而非任何第三方域名）
+    if (info && info.tailscaleUrl) {
+      localStorage.setItem(STORAGE_TS_URL, info.tailscaleUrl);
+    }
     const ip = pickBestIp(info && info.lanIps);
     if (!ip) {
       showCopyToast('电脑暂无可用局域网 IP');
@@ -502,10 +508,15 @@ const LanSwitcher = (() => {
     setTimeout(() => location.replace(`http://${ip}:${port}/?token=${encodeURIComponent(token)}`), 200);
   }
 
-  // LAN → CF：用户点 或 自检失败
+  // LAN → 远程：用户点 或 自检失败
+  // 解析顺序：用户自定义 cloud URL > 本机 Tailscale https 入口 > 无可用入口则不跳转，提示开启远程访问
   function switchToCloud(auto) {
-    const cloudUrl = localStorage.getItem(STORAGE_CLOUD_URL) || 'https://duocli.guixian.fun';
-    showCopyToast(auto ? '局域网失联，回到云端…' : '☁️ 切到云端…');
+    const cloudUrl = localStorage.getItem(STORAGE_CLOUD_URL) || localStorage.getItem(STORAGE_TS_URL);
+    if (!cloudUrl) {
+      showCopyToast('请在桌面端开启 Tailscale 远程访问，或手动设置 cloud URL');
+      return;
+    }
+    showCopyToast(auto ? '局域网失联，回到远程…' : '☁️ 切到远程…');
     setTimeout(() => location.replace(`${cloudUrl}/?token=${encodeURIComponent(token)}`), 200);
   }
 
