@@ -817,6 +817,19 @@ function cleanSessionTitle(raw: string): string {
     .slice(0, 60);
 }
 
+// Decide whether a cleaned user-message string is a real prompt usable as a session title.
+// Skips Claude Code's injected system preambles (the "Caveat:" local-command notice), empty
+// strings, leftover XML/tag wrappers, and session-continuation meta lines.
+function isRealUserPrompt(cleaned: string): boolean {
+  if (!cleaned) return false;
+  if (cleaned.startsWith('<')) return false; // unstripped tag wrapper / tool-result echo
+  if (cleaned.startsWith('Caveat:')) return false; // local-command caveat preamble
+  if (cleaned.startsWith('This session is being continued')) return false;
+  if (cleaned.startsWith('<command-message>')) return false;
+  if (cleaned.startsWith('<local-command-stdout>')) return false;
+  return true;
+}
+
 // Read up to maxBytes from the head of a file (cheap parse for large jsonl).
 function readHead(filePath: string, maxBytes = PROJECTS_HEAD_BYTES): string {
   const fd = fs.openSync(filePath, 'r');
@@ -897,7 +910,7 @@ function discoverClaudeSessions(): DiscoveredSession[] {
         const lines = head.split('\n');
         let cwd = '';
         let aiTitle = '';
-        let firstUserText = '';
+        let firstUserTitle = '';
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
@@ -905,8 +918,11 @@ function discoverClaudeSessions(): DiscoveredSession[] {
           try { obj = JSON.parse(trimmed); } catch { continue; }
           if (!cwd && typeof obj.cwd === 'string' && obj.cwd) cwd = obj.cwd;
           if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') aiTitle = obj.aiTitle;
-          if (!firstUserText && obj.type === 'user' && typeof obj.message?.content === 'string') {
-            firstUserText = obj.message.content;
+          // First REAL user prompt: skip the injected "Caveat:" system preamble, empty/tag-only
+          // messages, and continuation meta. Take the first one that survives the filter.
+          if (!firstUserTitle && obj.type === 'user' && typeof obj.message?.content === 'string') {
+            const cleaned = cleanSessionTitle(obj.message.content);
+            if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
           }
         }
         // The ai-title line is appended late and may be past the head window for large files.
@@ -917,7 +933,7 @@ function discoverClaudeSessions(): DiscoveredSession[] {
         }
         const title = aiTitle.trim()
           ? aiTitle.trim().slice(0, 60)
-          : (cleanSessionTitle(firstUserText) || f.uuid);
+          : (firstUserTitle || f.uuid);
         out.push({
           agent: 'claude',
           cwd: cwd ? path.resolve(cwd) : '',
@@ -1502,7 +1518,9 @@ function registerIPC(): void {
         const lines = content.split('\n');
         // Prefer: the last ai-title
         let aiTitle = '';
-        let firstUserText = '';
+        // First REAL user prompt: skip the injected "Caveat:" system preamble, empty/tag-only
+        // messages, and continuation meta. Take the first one that survives the filter.
+        let firstUserTitle = '';
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
@@ -1511,9 +1529,12 @@ function registerIPC(): void {
           if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') {
             aiTitle = obj.aiTitle; // Do not break; take the last one
           }
-          if (!firstUserText && obj.type === 'user') {
+          if (!firstUserTitle && obj.type === 'user') {
             const c = obj.message?.content;
-            if (typeof c === 'string') firstUserText = c;
+            if (typeof c === 'string') {
+              const cleaned = cleanSessionTitle(c);
+              if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
+            }
           }
         }
 
@@ -1526,16 +1547,7 @@ function registerIPC(): void {
 
         if (aiTitle.trim()) return aiTitle.trim().slice(0, 60);
 
-        if (firstUserText) {
-          const cleaned = firstUserText
-            .replace(/<command-name>[\s\S]*?<\/command-name>/g, '')
-            .replace(/<command-message>[\s\S]*?<\/command-message>/g, '')
-            .replace(/<command-args>[\s\S]*?<\/command-args>/g, '')
-            .replace(/<[^>]*>/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-          if (cleaned) return cleaned.slice(0, 60);
-        }
+        if (firstUserTitle) return firstUserTitle;
       } catch { /* ignore, fall through to uuid */ }
       return uuid;
     };

@@ -1906,18 +1906,6 @@ function buildLiveSessionRow(id: string, activeId: string | null): HTMLElement {
   dot.className = 'nav-session-dot';
   dot.style.backgroundColor = sessionStatusColor(id);
 
-  // Agent label is derivable up-front from the best-available signal: runtime provider (if the
-  // session has already run + been detected) else the displayName (which for a restored session is
-  // the raw "claude --resume <uuid>" command — agentFamilyFromDisplayName detects 'claude' in it).
-  // This makes a just-restored session show its agent BEFORE the user clicks it.
-  const liveSignal = sessionProviders.get(id) || sessionDisplayNames.get(id) || '';
-  const agentLabel = agentFamilyFromDisplayName(liveSignal);
-  const agentBadge = document.createElement('span');
-  agentBadge.className = 'nav-session-agent';
-  agentBadge.textContent = agentLabel;
-  const [agentBg] = getCliTagColors(agentLabel);
-  agentBadge.style.color = agentBg;
-
   const titleSpan = document.createElement('span');
   titleSpan.className = 'nav-session-title';
   titleSpan.textContent = title || 'Terminal';
@@ -1944,7 +1932,6 @@ function buildLiveSessionRow(id: string, activeId: string | null): HTMLElement {
   if (isPinned) item.classList.add('pinned');
 
   item.appendChild(dot);
-  item.appendChild(agentBadge);
   item.appendChild(titleSpan);
   item.appendChild(timeSpan);
   item.appendChild(editBtn);
@@ -1967,13 +1954,6 @@ function buildClosedSessionRow(cs: ClosedSessionInfo): HTMLElement {
   const dot = document.createElement('span');
   dot.className = 'nav-session-dot';
   dot.style.backgroundColor = '#555';
-
-  const csAgentLabel = agentFamilyFromDisplayName(cs.displayName || cs.presetCommand || cs.resumeCommand || '');
-  const agentBadge = document.createElement('span');
-  agentBadge.className = 'nav-session-agent';
-  agentBadge.textContent = csAgentLabel;
-  const [csAgentBg] = getCliTagColors(csAgentLabel);
-  agentBadge.style.color = csAgentBg;
 
   const titleSpan = document.createElement('span');
   titleSpan.className = 'nav-session-title';
@@ -2001,7 +1981,6 @@ function buildClosedSessionRow(cs: ClosedSessionInfo): HTMLElement {
   });
 
   item.appendChild(dot);
-  item.appendChild(agentBadge);
   item.appendChild(titleSpan);
   item.appendChild(timeSpan);
   item.appendChild(resumeBtn);
@@ -2019,13 +1998,6 @@ function buildHistorySessionRow(s: ClaudeHistorySession): HTMLElement {
   dot.className = 'nav-session-dot';
   dot.style.backgroundColor = '#d9775788';
 
-  const histAgentLabel = agentFamilyFromDisplayName(s.agent || s.resumeCommand || '');
-  const agentBadge = document.createElement('span');
-  agentBadge.className = 'nav-session-agent';
-  agentBadge.textContent = histAgentLabel;
-  const [histAgentBg] = getCliTagColors(histAgentLabel);
-  agentBadge.style.color = histAgentBg;
-
   const titleSpan = document.createElement('span');
   titleSpan.className = 'nav-session-title';
   titleSpan.textContent = s.title || s.id;
@@ -2042,7 +2014,6 @@ function buildHistorySessionRow(s: ClaudeHistorySession): HTMLElement {
   resumeBtn.addEventListener('click', (e) => { e.stopPropagation(); void resumeAgentSession(s); });
 
   item.appendChild(dot);
-  item.appendChild(agentBadge);
   item.appendChild(titleSpan);
   item.appendChild(timeSpan);
   item.appendChild(resumeBtn);
