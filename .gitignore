@@ -45,6 +45,7 @@ frp/cloudflared-config.private.yml
 .env
 .env.*
 .duocli/
+.cursor/
 
 # stray esbuild bundle (entry is dist/main/index.js)
 /app.js
