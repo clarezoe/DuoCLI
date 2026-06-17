@@ -735,6 +735,10 @@ html, body {
 
 .terminal-container .xterm {
   height: 100%;
+  /* Right gutter so the last column never sits under the scrollbar. FitAddon
+     subtracts the terminal element's padding when computing cols, so this
+     reserves space regardless of how the (overlay) scrollbar measures. */
+  padding-right: 12px;
 }
 
 .terminal-container .xterm-viewport {
