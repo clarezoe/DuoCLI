@@ -413,7 +413,9 @@ export class TerminalManager {
   }
 
   create(id: string, themeId: string, cwd: string, onData: (data: string) => void): void {
-    const theme = THEMES[themeId] || THEMES['vscode-dark'];
+    const moodBg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim();
+    const theme = { ...(THEMES[themeId] || THEMES['vscode-dark']) };
+    if (moodBg) theme.background = moodBg;
     const terminal = new Terminal({
       theme,
       fontSize: 14,
@@ -640,6 +642,13 @@ export class TerminalManager {
       this.activeId = null;
     }
     return this.activeId;
+  }
+
+  setBackgroundColor(bg: string): void {
+    if (!bg) return;
+    for (const inst of this.instances.values()) {
+      inst.terminal.options.theme = { ...inst.terminal.options.theme, background: bg };
+    }
   }
 
   fitActive(): void {

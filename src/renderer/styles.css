@@ -555,6 +555,20 @@ html, body {
   font-family: var(--font-mono);
 }
 
+#file-tree-list::-webkit-scrollbar {
+  width: 8px;
+}
+#file-tree-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+#file-tree-list::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+#file-tree-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
 .file-tree-empty {
   padding: 8px;
   color: var(--text-secondary);
@@ -711,7 +725,7 @@ html, body {
 .terminal-container {
   position: absolute;
   inset: 0;
-  padding: 10px 16px 10px 18px;
+  padding: 12px 16px 12px 18px;
   display: none;
 }
 
@@ -724,7 +738,8 @@ html, body {
 }
 
 .terminal-container .xterm-viewport {
-  overflow-y: auto !important;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
 }
 
 /* Thin, translucent terminal scrollbar so it doesn't cover the text column */
