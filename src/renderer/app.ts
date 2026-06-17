@@ -3886,3 +3886,67 @@ window.posse.getAppVersion().then((version) => {
 }).catch(() => {
   appVersionEl.textContent = 'v?';
 });
+
+// ===== App-wide mood color themes (chrome only; terminal xterm colors are separate) =====
+(function initAppThemePicker() {
+  type AppTheme = { id: string; name: string; vars: Record<string, string> };
+  const THEMES: AppTheme[] = [
+    { id: 'midnight', name: 'Midnight', vars: {
+      '--bg-primary': '#0d1117', '--bg-panel': '#11171a', '--bg-sidebar': '#11171a', '--bg-toolbar': '#0f1418',
+      '--bg-secondary': '#161d20', '--bg-active': '#16221b', '--text-primary': '#c9d1d1', '--text-secondary': '#6e7a73',
+      '--text-muted': '#6e7a73', '--accent-green': '#3fb950', '--accent-green-dim': '#2ea043', '--accent': '#3fb950',
+      '--accent-color': '#3fb950', '--border-color': '#1f2a24', '--border-subtle': '#182019', '--hover-bg': '#161d20',
+      '--active-bg': '#16221b', '--row-selected': '#16221b', '--danger': '#f85149', '--input-bg': '#161d20', '--text-color': '#c9d1d1' } },
+    { id: 'dracula', name: 'Dracula', vars: {
+      '--bg-primary': '#1e1f29', '--bg-panel': '#21222c', '--bg-sidebar': '#21222c', '--bg-toolbar': '#191a21',
+      '--bg-secondary': '#2a2c38', '--bg-active': '#343746', '--text-primary': '#f8f8f2', '--text-secondary': '#9aa0b5',
+      '--text-muted': '#9aa0b5', '--accent-green': '#bd93f9', '--accent-green-dim': '#a87ef0', '--accent': '#bd93f9',
+      '--accent-color': '#bd93f9', '--border-color': '#343746', '--border-subtle': '#2a2c38', '--hover-bg': '#2a2c38',
+      '--active-bg': '#343746', '--row-selected': '#343746', '--danger': '#ff5555', '--input-bg': '#2a2c38', '--text-color': '#f8f8f2' } },
+    { id: 'nord', name: 'Nord', vars: {
+      '--bg-primary': '#2e3440', '--bg-panel': '#2b303b', '--bg-sidebar': '#2b303b', '--bg-toolbar': '#272c36',
+      '--bg-secondary': '#3b4252', '--bg-active': '#434c5e', '--text-primary': '#eceff4', '--text-secondary': '#a3adbf',
+      '--text-muted': '#a3adbf', '--accent-green': '#88c0d0', '--accent-green-dim': '#6fa8b8', '--accent': '#88c0d0',
+      '--accent-color': '#88c0d0', '--border-color': '#3b4252', '--border-subtle': '#353b47', '--hover-bg': '#3b4252',
+      '--active-bg': '#434c5e', '--row-selected': '#434c5e', '--danger': '#bf616a', '--input-bg': '#3b4252', '--text-color': '#eceff4' } },
+    { id: 'solarized', name: 'Solarized', vars: {
+      '--bg-primary': '#002b36', '--bg-panel': '#073642', '--bg-sidebar': '#073642', '--bg-toolbar': '#00242e',
+      '--bg-secondary': '#0a4250', '--bg-active': '#0d4d5c', '--text-primary': '#eee8d5', '--text-secondary': '#93a1a1',
+      '--text-muted': '#93a1a1', '--accent-green': '#2aa198', '--accent-green-dim': '#1f8c84', '--accent': '#2aa198',
+      '--accent-color': '#2aa198', '--border-color': '#0f5562', '--border-subtle': '#0a4250', '--hover-bg': '#0a4250',
+      '--active-bg': '#0d4d5c', '--row-selected': '#0d4d5c', '--danger': '#dc322f', '--input-bg': '#0a4250', '--text-color': '#eee8d5' } },
+    { id: 'monokai', name: 'Monokai', vars: {
+      '--bg-primary': '#1e1f1c', '--bg-panel': '#272822', '--bg-sidebar': '#272822', '--bg-toolbar': '#1a1b16',
+      '--bg-secondary': '#34352e', '--bg-active': '#3e3f37', '--text-primary': '#f8f8f2', '--text-secondary': '#a6a28c',
+      '--text-muted': '#a6a28c', '--accent-green': '#a6e22e', '--accent-green-dim': '#8fbf28', '--accent': '#a6e22e',
+      '--accent-color': '#a6e22e', '--border-color': '#49483e', '--border-subtle': '#34352e', '--hover-bg': '#34352e',
+      '--active-bg': '#3e3f37', '--row-selected': '#3e3f37', '--danger': '#f92672', '--input-bg': '#34352e', '--text-color': '#f8f8f2' } },
+    { id: 'daylight', name: 'Daylight', vars: {
+      '--bg-primary': '#ffffff', '--bg-panel': '#f5f6f8', '--bg-sidebar': '#f5f6f8', '--bg-toolbar': '#eceef1',
+      '--bg-secondary': '#eceef1', '--bg-active': '#ddf4e3', '--text-primary': '#1f2328', '--text-secondary': '#6e7781',
+      '--text-muted': '#6e7781', '--accent-green': '#1a7f37', '--accent-green-dim': '#116329', '--accent': '#1a7f37',
+      '--accent-color': '#1a7f37', '--border-color': '#d0d7de', '--border-subtle': '#e1e4e8', '--hover-bg': '#eceef1',
+      '--active-bg': '#ddf4e3', '--row-selected': '#ddf4e3', '--danger': '#cf222e', '--input-bg': '#ffffff', '--text-color': '#1f2328' } },
+  ];
+  const KEY = 'posse_app_theme';
+  const select = document.getElementById('app-theme-select') as HTMLSelectElement | null;
+  const getStored = (): string => { try { return localStorage.getItem(KEY) || 'midnight'; } catch { return 'midnight'; } };
+  const apply = (id: string): void => {
+    const theme = THEMES.find((t) => t.id === id) || THEMES[0];
+    const root = document.documentElement.style;
+    for (const [k, v] of Object.entries(theme.vars)) root.setProperty(k, v);
+    try { localStorage.setItem(KEY, theme.id); } catch { /* ignore */ }
+    if (select && select.value !== theme.id) select.value = theme.id;
+  };
+  if (select) {
+    select.innerHTML = '';
+    for (const t of THEMES) {
+      const opt = document.createElement('option');
+      opt.value = t.id; opt.textContent = t.name;
+      select.appendChild(opt);
+    }
+    select.value = getStored();
+    select.addEventListener('change', () => apply(select.value));
+  }
+  apply(getStored());
+})();

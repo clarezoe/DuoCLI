@@ -168,6 +168,18 @@ button:disabled {
   opacity: 0.5;
 }
 
+.icon-select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  font-size: 12px;
+  max-width: 110px;
+  outline: none;
+}
+.icon-select:hover { border-color: var(--accent); }
+
 .session-list {
   overflow: auto;
   padding: 8px;

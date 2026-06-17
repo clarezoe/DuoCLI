@@ -1,6 +1,6 @@
 {
   "name": "posse",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Your AI coding posse | AI Coding Terminal with Real-time Mobile-Desktop Sync — Wireless LAN connection, code from anywhere",
   "main": "dist/main/index.js",
   "scripts": {
@@ -17,13 +17,13 @@
     "build:win": "npm run build:ts && npm run copy:html && electron-builder --win",
     "build:linux": "npm run build:ts && npm run copy:html && electron-builder --linux"
   },
-  "homepage": "https://github.com/saddism/DuoCLI",
+  "homepage": "https://github.com/Fei2-Labs/posse",
   "repository": {
     "type": "git",
-    "url": "https://github.com/saddism/DuoCLI.git"
+    "url": "https://github.com/Fei2-Labs/posse.git"
   },
   "bugs": {
-    "url": "https://github.com/saddism/DuoCLI/issues"
+    "url": "https://github.com/Fei2-Labs/posse/issues"
   },
   "keywords": [
     "claude-code",

@@ -47,6 +47,7 @@ const renameOverlayEl = getRequiredElement('rename-overlay');
 const renameDialogEl = getRequiredForm('rename-dialog');
 const renameInputEl = getRequiredInput('rename-input');
 const renameCancelBtn = getRequiredButton('rename-cancel-btn');
+const themeSelectEl = getRequiredSelect('theme-select');
 
 let daemonConfig: DaemonConfig | null = null;
 let eventSocket: WebSocket | null = null;
@@ -126,18 +127,85 @@ function displayName(session: PtySession): string {
   return session.presetCommand.split(/\s+/)[0] || 'Shell';
 }
 
+type TermTheme = {
+  background: string; foreground: string; cursor: string; selectionBackground: string;
+};
+type MoodTheme = {
+  id: string; name: string;
+  chrome: { bg: string; panel: string; panel2: string; panel3: string; border: string; text: string; muted: string; accent: string; accent2: string; danger: string };
+  term: TermTheme;
+};
+
+const THEMES: MoodTheme[] = [
+  { id: 'midnight', name: 'Midnight',
+    chrome: { bg: '#111316', panel: '#181b20', panel2: '#20242b', panel3: '#282d35', border: '#343a44', text: '#e6e8eb', muted: '#8f98a3', accent: '#47d18c', accent2: '#65a8ff', danger: '#f66b6b' },
+    term: { background: '#111316', foreground: '#e6e8eb', cursor: '#47d18c', selectionBackground: '#334155' } },
+  { id: 'dracula', name: 'Dracula',
+    chrome: { bg: '#282a36', panel: '#21222c', panel2: '#343746', panel3: '#424458', border: '#44475a', text: '#f8f8f2', muted: '#9aa0b5', accent: '#bd93f9', accent2: '#8be9fd', danger: '#ff5555' },
+    term: { background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', selectionBackground: '#44475a' } },
+  { id: 'nord', name: 'Nord',
+    chrome: { bg: '#2e3440', panel: '#2b303b', panel2: '#3b4252', panel3: '#434c5e', border: '#434c5e', text: '#eceff4', muted: '#a3adbf', accent: '#88c0d0', accent2: '#81a1c1', danger: '#bf616a' },
+    term: { background: '#2e3440', foreground: '#d8dee9', cursor: '#88c0d0', selectionBackground: '#434c5e' } },
+  { id: 'solarized', name: 'Solarized',
+    chrome: { bg: '#002b36', panel: '#073642', panel2: '#0a4250', panel3: '#0d4d5c', border: '#0f5562', text: '#eee8d5', muted: '#93a1a1', accent: '#859900', accent2: '#268bd2', danger: '#dc322f' },
+    term: { background: '#002b36', foreground: '#839496', cursor: '#93a1a1', selectionBackground: '#073642' } },
+  { id: 'monokai', name: 'Monokai',
+    chrome: { bg: '#1e1f1c', panel: '#272822', panel2: '#34352e', panel3: '#3e3f37', border: '#49483e', text: '#f8f8f2', muted: '#a6a28c', accent: '#a6e22e', accent2: '#66d9ef', danger: '#f92672' },
+    term: { background: '#272822', foreground: '#f8f8f2', cursor: '#f8f8f2', selectionBackground: '#49483e' } },
+  { id: 'daylight', name: 'Daylight',
+    chrome: { bg: '#ffffff', panel: '#f5f6f8', panel2: '#eceef1', panel3: '#e1e4e8', border: '#d0d7de', text: '#1f2328', muted: '#6e7781', accent: '#1a7f37', accent2: '#0969da', danger: '#cf222e' },
+    term: { background: '#ffffff', foreground: '#1f2328', cursor: '#1a7f37', selectionBackground: '#b6e3ff' } },
+];
+
+const THEME_STORAGE_KEY = 'posse_terminal_theme';
+let activeTheme: MoodTheme = THEMES[0];
+
+function getStoredThemeId(): string {
+  try { return localStorage.getItem(THEME_STORAGE_KEY) || 'midnight'; } catch { return 'midnight'; }
+}
+
+function applyTheme(id: string): void {
+  const theme = THEMES.find((t) => t.id === id) || THEMES[0];
+  activeTheme = theme;
+  const root = document.documentElement.style;
+  root.setProperty('--bg', theme.chrome.bg);
+  root.setProperty('--panel', theme.chrome.panel);
+  root.setProperty('--panel-2', theme.chrome.panel2);
+  root.setProperty('--panel-3', theme.chrome.panel3);
+  root.setProperty('--border', theme.chrome.border);
+  root.setProperty('--text', theme.chrome.text);
+  root.setProperty('--muted', theme.chrome.muted);
+  root.setProperty('--accent', theme.chrome.accent);
+  root.setProperty('--accent-2', theme.chrome.accent2);
+  root.setProperty('--danger', theme.chrome.danger);
+  // Restyle every live terminal
+  for (const inst of terminals.values()) {
+    inst.terminal.options.theme = { ...theme.term };
+  }
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme.id); } catch { /* ignore */ }
+  if (themeSelectEl.value !== theme.id) themeSelectEl.value = theme.id;
+}
+
+function initThemePicker(): void {
+  themeSelectEl.innerHTML = '';
+  for (const t of THEMES) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    themeSelectEl.appendChild(opt);
+  }
+  themeSelectEl.value = getStoredThemeId();
+  themeSelectEl.addEventListener('change', () => applyTheme(themeSelectEl.value));
+  applyTheme(getStoredThemeId());
+}
+
 function createTerminal(session: PtySession): TerminalInstance {
   const terminal = new Terminal({
     cursorBlink: true,
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 14,
     scrollback: 10000,
-    theme: {
-      background: '#111316',
-      foreground: '#e6e8eb',
-      cursor: '#47d18c',
-      selectionBackground: '#334155',
-    },
+    theme: { ...activeTheme.term },
   });
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
@@ -502,6 +570,7 @@ window.addEventListener('resize', () => {
 
 async function main(): Promise<void> {
   try {
+    initThemePicker();
     await loadConfig();
     await loadSessions();
     connectEvents();
