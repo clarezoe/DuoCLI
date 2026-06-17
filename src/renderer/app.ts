@@ -2627,6 +2627,16 @@ async function verifyResumableSession(agent: string, cwd: string, sessionId: str
 
 // Resume a closed session
 async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
+  // If this agent conversation is already open as a live PTY, just focus it — never spawn a duplicate.
+  if (cs.resumeId) {
+    for (const [ptyId, agentId] of sessionAgentId) {
+      if (agentId === cs.resumeId && sessionTitles.has(ptyId)) {
+        switchSession(ptyId);
+        return;
+      }
+    }
+  }
+
   const cwd = cs.cwd || sessionCwds.get(termManager.getActiveId() || '') || '';
   const themeId = resolveThemeId(currentThemeId, cwd);
 
@@ -2656,6 +2666,8 @@ async function restoreClosedSession(cs: ClosedSessionInfo): Promise<void> {
   const result = await window.posse.createPty(cwd, command, themeId);
   const now = Date.now();
   attachPtySession({ ...result, title: cs.title, displayName: cs.displayName || result.displayName }, now);
+  // Record the correlation so a future click on this same conversation dedups to this live PTY.
+  if (cs.resumeId) sessionAgentId.set(result.id, cs.resumeId);
   if (cwd) { selectedProjectPath = cwd; setProjectExpanded(normalizeCwd(cwd), true); }
 
   // Remove from the closed list
