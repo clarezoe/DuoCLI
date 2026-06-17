@@ -148,6 +148,23 @@ export function writeClaudeSessionTitle(uuid: string, title: string): void {
         break;
       }
     }
+    // Closed records may store the short 8-hex prefix Claude prints in its resume hint, not the
+    // full uuid the on-disk file is named after. When no exact match exists, fall back to the
+    // first file whose name starts with the prefix (followed by '-' or '.jsonl').
+    if (!target) {
+      for (const dir of fs.readdirSync(projectsDir)) {
+        const projDir = path.join(projectsDir, dir);
+        let names: string[];
+        try { names = fs.readdirSync(projDir); } catch { continue; }
+        const match = names.find(name =>
+          name.endsWith('.jsonl') && (name.startsWith(uuid + '-') || name === uuid + '.jsonl'),
+        );
+        if (match) {
+          target = path.join(projDir, match);
+          break;
+        }
+      }
+    }
     if (!target) return;
     const lines =
       JSON.stringify({ type: 'custom-title', customTitle: trimmed, sessionId: uuid }) + '\n' +

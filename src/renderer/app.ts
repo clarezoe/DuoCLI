@@ -2041,6 +2041,16 @@ interface ProjectAgentGroup {
   latest: number;
 }
 
+// Claude/Codex print a short 8-hex prefix in their resume hints, while the on-disk session file
+// uses the full uuid (8-4-4-4-12). Collapse both forms to the shared 8-hex prefix so the same
+// conversation dedups across the live / closed / history sources regardless of which form a
+// source captured. Non-hex ids (rare) fall back to the lowercased full string.
+function conversationKey(uuid: string): string {
+  const u = uuid.toLowerCase();
+  const m = u.match(/^[0-9a-f]{8}/);
+  return m ? m[0] : u;
+}
+
 function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup> {
   const key = normalizeCwd(projPath);
   const groups = new Map<string, ProjectAgentGroup>();
@@ -2052,15 +2062,18 @@ function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup
 
   // Canonical dedup: each conversation is identified by its agent session uuid. The same uuid can
   // appear as a LIVE PTY (resumeId), a CLOSED DuoCLI record (cs.resumeId), and an on-disk HISTORY
-  // row (s.id). Preference order is live > closed > history: once a uuid is shown by a
-  // higher-priority source, lower-priority duplicates are skipped.
+  // row (s.id). Sources capture the uuid in different forms (short 8-hex prefix vs full uuid), so
+  // every uuid is routed through conversationKey() to a canonical key before matching. Preference
+  // order is live > closed > history: once a key is shown by a higher-priority source,
+  // lower-priority duplicates are skipped.
   const shownUuids = new Set<string>();
 
   // Belt-and-suspenders: agent uuids already OPEN as a live PTY (any cwd), via either tracking map.
-  // The resumeId-based shownUuids set below is the primary mechanism.
+  // Stored as canonical keys to match the on-disk history form. The resumeId-based shownUuids set
+  // below is the primary mechanism.
   const openAgentIds = new Set<string>();
-  for (const uuid of sessionResumeId.values()) if (uuid) openAgentIds.add(uuid);
-  for (const uuid of sessionAgentId.values()) if (uuid) openAgentIds.add(uuid);
+  for (const uuid of sessionResumeId.values()) if (uuid) openAgentIds.add(conversationKey(uuid));
+  for (const uuid of sessionAgentId.values()) if (uuid) openAgentIds.add(conversationKey(uuid));
 
   // 1. Live PTY sessions in this cwd (highest priority)
   for (const id of sessionTitles.keys()) {
@@ -2070,23 +2083,23 @@ function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup
     // run to an already-active session's file. Skip the duplicate so the sidebar never
     // shows two rows for the same conversation. The first live PTY for a uuid wins.
     // A session with no resolvable uuid is always shown.
-    if (uuid && shownUuids.has(uuid)) continue;
+    if (uuid && shownUuids.has(conversationKey(uuid))) continue;
     const family = agentFamilyFromDisplayName(sessionDisplayNames.get(id) || '');
     const g = ensure(family);
     g.lives.push(id);
     g.latest = Math.max(g.latest, sessionUpdateTimes.get(id) || 0);
-    if (uuid) shownUuids.add(uuid);
+    if (uuid) shownUuids.add(conversationKey(uuid));
   }
 
   // 2. Closed DuoCLI sessions in this cwd — skip any already shown as a live PTY.
   for (const cs of closedSessions) {
     if (normalizeCwd(cs.cwd || '') !== key) continue;
-    if (cs.resumeId && shownUuids.has(cs.resumeId)) continue;
+    if (cs.resumeId && shownUuids.has(conversationKey(cs.resumeId))) continue;
     const family = agentFamilyFromDisplayName(cs.displayName || '');
     const g = ensure(family);
     g.closed.push(cs);
     g.latest = Math.max(g.latest, cs.closedAt || 0);
-    if (cs.resumeId) shownUuids.add(cs.resumeId);
+    if (cs.resumeId) shownUuids.add(conversationKey(cs.resumeId));
   }
 
   // 3. Native multi-agent history from the backend projects:list (Claude/Codex/Kiro/Copilot)
@@ -2097,8 +2110,8 @@ function collectProjectSessions(projPath: string): Map<string, ProjectAgentGroup
       const g = ensure(family);
       for (const s of agentGroup.sessions) {
         // Dedup: skip if this on-disk session is already shown as a live PTY or a closed record.
-        if (shownUuids.has(s.id) || openAgentIds.has(s.id)) continue;
-        shownUuids.add(s.id);
+        if (shownUuids.has(conversationKey(s.id)) || openAgentIds.has(conversationKey(s.id))) continue;
+        shownUuids.add(conversationKey(s.id));
         g.history.push({
           id: s.id,
           title: s.title,
