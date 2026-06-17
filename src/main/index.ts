@@ -869,18 +869,77 @@ function readTail(filePath: string, size: number, tailBytes = 32 * 1024): string
   }
 }
 
-// Scan a chunk of jsonl lines for the LAST `ai-title`. Returns '' if none found.
-function findAiTitleInChunk(chunk: string): string {
-  let aiTitle = '';
+// Above this size, scan only the tail for title-type lines instead of the whole file.
+const CLAUDE_TITLE_FULL_SCAN_MAX_BYTES = 8 * 1024 * 1024;
+const CLAUDE_TITLE_TAIL_BYTES = 512 * 1024;
+
+interface ClaudeTitleFields {
+  customTitle: string; // explicit user rename (authoritative)
+  agentName: string; // usually mirrors customTitle
+  aiTitle: string; // Claude's auto title
+}
+
+// Scan a chunk of jsonl lines for the LAST occurrence of each title-type line. Uses a cheap
+// substring `.includes` filter BEFORE JSON.parse so we don't parse every line of a large file.
+function scanClaudeTitleFields(chunk: string, acc: ClaudeTitleFields): void {
   for (const line of chunk.split('\n')) {
     const trimmed = line.trim();
-    if (!trimmed || !trimmed.includes('"ai-title"')) continue;
+    if (!trimmed) continue;
+    const hasCustom = trimmed.includes('"type":"custom-title"');
+    const hasAgent = trimmed.includes('"type":"agent-name"');
+    const hasAi = trimmed.includes('"type":"ai-title"');
+    if (!hasCustom && !hasAgent && !hasAi) continue;
     try {
-      const obj = JSON.parse(trimmed) as { type?: string; aiTitle?: string };
-      if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') aiTitle = obj.aiTitle;
+      const obj = JSON.parse(trimmed) as {
+        type?: string;
+        customTitle?: string;
+        agentName?: string;
+        aiTitle?: string;
+      };
+      // Last occurrence of each type wins (most recent).
+      if (obj.type === 'custom-title' && typeof obj.customTitle === 'string') {
+        acc.customTitle = obj.customTitle;
+      } else if (obj.type === 'agent-name' && typeof obj.agentName === 'string') {
+        acc.agentName = obj.agentName;
+      } else if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') {
+        acc.aiTitle = obj.aiTitle;
+      }
     } catch { /* skip partial/broken line (tail reads may start mid-line) */ }
   }
-  return aiTitle;
+}
+
+// Find the title-type lines (customTitle / agentName / aiTitle) for a Claude session file.
+// They can appear anywhere in the file (often late), so we scan beyond the head:
+//   - file <= 8MB  -> read the WHOLE file and scan (cheap substring filter before parse).
+//   - file >  8MB  -> read only the LAST ~512KB (titles are typically late) and scan that.
+// Returns the LAST occurrence of each type. Never throws.
+function findClaudeTitleFields(filePath: string, size: number): ClaudeTitleFields {
+  const acc: ClaudeTitleFields = { customTitle: '', agentName: '', aiTitle: '' };
+  try {
+    if (size > CLAUDE_TITLE_FULL_SCAN_MAX_BYTES) {
+      scanClaudeTitleFields(readTail(filePath, size, CLAUDE_TITLE_TAIL_BYTES), acc);
+    } else {
+      scanClaudeTitleFields(fs.readFileSync(filePath, 'utf-8'), acc);
+    }
+  } catch { /* never throw; leave acc empty -> caller falls back */ }
+  return acc;
+}
+
+// Resolve the best Claude session title from scanned fields + head-derived fallbacks.
+// Priority: customTitle > agentName > aiTitle > first real user prompt > uuid.
+function resolveClaudeTitle(
+  fields: ClaudeTitleFields,
+  firstUserTitle: string,
+  renameTitle: string,
+  uuid: string
+): string {
+  if (fields.customTitle.trim()) return fields.customTitle.trim().slice(0, 60);
+  if (fields.agentName.trim()) return fields.agentName.trim().slice(0, 60);
+  if (fields.aiTitle.trim()) return fields.aiTitle.trim().slice(0, 60);
+  // Low-priority legacy fallback: the "The user named this session" marker (pre customTitle).
+  if (renameTitle) return renameTitle;
+  if (firstUserTitle) return firstUserTitle;
+  return uuid;
 }
 
 // --- Claude: ~/.claude/projects/<enc>/<uuid>.jsonl ; real cwd from in-file `cwd` ---
@@ -917,21 +976,19 @@ function discoverClaudeSessions(): DiscoveredSession[] {
 
     for (const f of files.slice(0, MAX_FILES)) {
       try {
-        // Read head only; recover real cwd + a title from the first ai-title / user msg.
+        // Head read: recover real cwd + first-real-user-message fallback (titles handled below).
         const head = readHead(f.full);
         const lines = head.split('\n');
         let cwd = '';
-        let aiTitle = '';
         let firstUserTitle = '';
         let renameTitle = '';
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          let obj: { type?: string; cwd?: string; aiTitle?: string; message?: { content?: unknown } };
+          let obj: { type?: string; cwd?: string; message?: { content?: unknown } };
           try { obj = JSON.parse(trimmed); } catch { continue; }
           if (!cwd && typeof obj.cwd === 'string' && obj.cwd) cwd = obj.cwd;
-          if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') aiTitle = obj.aiTitle;
-          // Explicit rename marker (highest priority). Match the RAW text; last rename wins.
+          // Legacy rename marker (low-priority fallback). Match the RAW text; last rename wins.
           if (obj.type === 'user' && typeof obj.message?.content === 'string') {
             const r = extractRenameTitle(obj.message.content);
             if (r) renameTitle = r;
@@ -943,18 +1000,10 @@ function discoverClaudeSessions(): DiscoveredSession[] {
             if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
           }
         }
-        // The ai-title line is appended late and may be past the head window for large files.
-        // Scan the tail too and prefer the latest ai-title found anywhere.
-        if (!aiTitle.trim() && f.size > PROJECTS_HEAD_BYTES) {
-          const tailTitle = findAiTitleInChunk(readTail(f.full, f.size));
-          if (tailTitle.trim()) aiTitle = tailTitle;
-        }
-        // Priority: explicit rename > ai-title > first real user prompt > uuid.
-        const title = renameTitle
-          ? renameTitle
-          : aiTitle.trim()
-            ? aiTitle.trim().slice(0, 60)
-            : (firstUserTitle || f.uuid);
+        // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
+        // the head window. Scan the whole file (or tail for huge files) to recover them.
+        const titleFields = findClaudeTitleFields(f.full, f.size);
+        const title = resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, f.uuid);
         out.push({
           agent: 'claude',
           cwd: cwd ? path.resolve(cwd) : '',
@@ -1516,82 +1565,31 @@ function registerIPC(): void {
   // List a directory's native session history in Claude Code (~/.claude/projects/<encoded>/<uuid>.jsonl)
   ipcMain.handle('claude-sessions:list', (_e, cwd: string) => {
     const MAX_SESSIONS = 40;
-    const LARGE_FILE_BYTES = 3 * 1024 * 1024; // Above this, read only the head to find the title
-    const HEAD_BYTES = 64 * 1024;
 
     const parseTitle = (filePath: string, size: number, uuid: string): string => {
       try {
-        const isLarge = size > LARGE_FILE_BYTES;
-        let content: string;
-        if (isLarge) {
-          const fd = fs.openSync(filePath, 'r');
-          try {
-            const buf = Buffer.alloc(HEAD_BYTES);
-            const bytes = fs.readSync(fd, buf, 0, HEAD_BYTES, 0);
-            content = buf.subarray(0, bytes).toString('utf-8');
-          } finally {
-            fs.closeSync(fd);
-          }
-        } else {
-          content = fs.readFileSync(filePath, 'utf-8');
-        }
-
-        const lines = content.split('\n');
-        // Prefer: the last ai-title
-        let aiTitle = '';
-        // First REAL user prompt: skip the injected "Caveat:" system preamble, empty/tag-only
-        // messages, and continuation meta. Take the first one that survives the filter.
+        // Head read: first-real-user-message fallback + legacy rename marker.
+        const head = readHead(filePath);
         let firstUserTitle = '';
-        // Explicit rename marker (highest priority). Match RAW text; last rename wins.
         let renameTitle = '';
-        for (const line of lines) {
+        for (const line of head.split('\n')) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          let obj: { type?: string; aiTitle?: string; message?: { content?: unknown } };
+          let obj: { type?: string; message?: { content?: unknown } };
           try { obj = JSON.parse(trimmed); } catch { continue; }
-          if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') {
-            aiTitle = obj.aiTitle; // Do not break; take the last one
-          }
           if (obj.type === 'user' && typeof obj.message?.content === 'string') {
             const r = extractRenameTitle(obj.message.content);
             if (r) renameTitle = r;
-          }
-          if (!firstUserTitle && obj.type === 'user') {
-            const c = obj.message?.content;
-            if (typeof c === 'string') {
-              const cleaned = cleanSessionTitle(c);
+            if (!firstUserTitle) {
+              const cleaned = cleanSessionTitle(obj.message.content);
               if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
             }
           }
         }
-
-        // For large files we only read the head; both the ai-title and a late rename marker may
-        // be past that window. Scan the tail to recover them before falling back to user text.
-        if (isLarge) {
-          const tail = readTail(filePath, size);
-          if (!aiTitle.trim()) {
-            const tailTitle = findAiTitleInChunk(tail);
-            if (tailTitle.trim()) aiTitle = tailTitle;
-          }
-          for (const line of tail.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed || !/named this session/i.test(trimmed)) continue;
-            try {
-              const obj = JSON.parse(trimmed) as { type?: string; message?: { content?: unknown } };
-              if (obj.type === 'user' && typeof obj.message?.content === 'string') {
-                const r = extractRenameTitle(obj.message.content);
-                if (r) renameTitle = r; // tail is most recent; last wins
-              }
-            } catch { /* skip partial line (tail may start mid-line) */ }
-          }
-        }
-
-        // Priority: explicit rename > ai-title > first real user prompt > uuid.
-        if (renameTitle) return renameTitle;
-
-        if (aiTitle.trim()) return aiTitle.trim().slice(0, 60);
-
-        if (firstUserTitle) return firstUserTitle;
+        // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
+        // the head window. Scan the whole file (or tail for huge files) to recover them.
+        const titleFields = findClaudeTitleFields(filePath, size);
+        return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, uuid);
       } catch { /* ignore, fall through to uuid */ }
       return uuid;
     };
