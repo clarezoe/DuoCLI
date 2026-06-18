@@ -316,6 +316,7 @@ export function startRemoteServer(
   onRemoteDestroy?: (id: string) => void,
   onServerStarted?: (info: RemoteServerInfo) => void,
   onConnectionStatusChanged?: (status: RemoteConnectionStatus) => void,
+  listResumableSessions?: (cwd: string) => Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: string; resumeCommand: string }>,
 ): void {
   // Cache for use by Bridge events
   cachedPtyManager = ptyManager;
@@ -635,6 +636,13 @@ export function startRemoteServer(
       if (uniq.length >= MAX_RECENT_CWDS) break;
     }
     res.json({ items: uniq });
+  });
+
+  // Resumable native sessions (Claude + Codex) for a given cwd
+  app.get('/api/resumable', (req, res) => {
+    const cwd = typeof req.query.cwd === 'string' ? req.query.cwd : '';
+    try { res.json(listResumableSessions ? listResumableSessions(cwd) : []); }
+    catch { res.json([]); }
   });
 
   // Create a session — created via ptyManager, notifying the desktop

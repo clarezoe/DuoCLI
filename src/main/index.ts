@@ -1336,6 +1336,82 @@ function buildProjectsList(extraFolders: string[] = []): ProjectEntry[] {
   return projects;
 }
 
+// List a directory's resumable native sessions (Claude Code + Codex), merged + sorted by mtime.
+function listResumableSessions(cwd: string): Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: string; resumeCommand: string }> {
+  const MAX_SESSIONS = 40;
+
+  const parseTitle = (filePath: string, size: number, mtimeMs: number, uuid: string): string =>
+    getCachedClaudeTitle(filePath, mtimeMs, size, () => {
+      try {
+        // Head read: first-real-user-message fallback + legacy rename marker.
+        const head = readHead(filePath);
+        let firstUserTitle = '';
+        let renameTitle = '';
+        for (const line of head.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let obj: { type?: string; message?: { content?: unknown } };
+          try { obj = JSON.parse(trimmed); } catch { continue; }
+          if (obj.type === 'user' && typeof obj.message?.content === 'string') {
+            const r = extractRenameTitle(obj.message.content);
+            if (r) renameTitle = r;
+            if (!firstUserTitle) {
+              const cleaned = cleanSessionTitle(obj.message.content);
+              if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
+            }
+          }
+        }
+        // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
+        // the head window. Scan the whole file (or tail for huge files) to recover them.
+        const titleFields = findClaudeTitleFields(filePath, size);
+        return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, uuid);
+      } catch { /* ignore, fall through to uuid */ }
+      return uuid;
+    });
+
+  try {
+    const abs = path.resolve(String(cwd || ''));
+    if (!abs) return [];
+    const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-');
+    const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
+    if (!fs.existsSync(dir)) return [];
+
+    const entries = fs.readdirSync(dir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .map((name) => {
+        const full = path.join(dir, name);
+        try {
+          const st = fs.statSync(full);
+          if (!st.isFile()) return null;
+          return { name, full, size: st.size, mtimeMs: st.mtimeMs };
+        } catch { return null; }
+      })
+      .filter((e): e is { name: string; full: string; size: number; mtimeMs: number } => e !== null)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, MAX_SESSIONS);
+
+    const claudeList = entries.map((e) => {
+      const uuid = e.name.replace(/\.jsonl$/, '');
+      return {
+        id: uuid,
+        title: parseTitle(e.full, e.size, e.mtimeMs, uuid),
+        cwd: abs,
+        mtimeMs: e.mtimeMs,
+        agent: 'claude' as const,
+        resumeCommand: `claude --resume ${uuid}`,
+      };
+    });
+
+    const codexList = listCodexSessions(abs);
+
+    return [...claudeList, ...codexList]
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, MAX_SESSIONS);
+  } catch {
+    return [];
+  }
+}
+
 function registerIPC(): void {
   // Set window title
   ipcMain.on('window:set-title', (_e, title: string) => {
@@ -1606,80 +1682,7 @@ function registerIPC(): void {
   });
 
   // List a directory's native session history in Claude Code (~/.claude/projects/<encoded>/<uuid>.jsonl)
-  ipcMain.handle('claude-sessions:list', (_e, cwd: string) => {
-    const MAX_SESSIONS = 40;
-
-    const parseTitle = (filePath: string, size: number, mtimeMs: number, uuid: string): string =>
-      getCachedClaudeTitle(filePath, mtimeMs, size, () => {
-        try {
-          // Head read: first-real-user-message fallback + legacy rename marker.
-          const head = readHead(filePath);
-          let firstUserTitle = '';
-          let renameTitle = '';
-          for (const line of head.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            let obj: { type?: string; message?: { content?: unknown } };
-            try { obj = JSON.parse(trimmed); } catch { continue; }
-            if (obj.type === 'user' && typeof obj.message?.content === 'string') {
-              const r = extractRenameTitle(obj.message.content);
-              if (r) renameTitle = r;
-              if (!firstUserTitle) {
-                const cleaned = cleanSessionTitle(obj.message.content);
-                if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
-              }
-            }
-          }
-          // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
-          // the head window. Scan the whole file (or tail for huge files) to recover them.
-          const titleFields = findClaudeTitleFields(filePath, size);
-          return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, uuid);
-        } catch { /* ignore, fall through to uuid */ }
-        return uuid;
-      });
-
-    try {
-      const abs = path.resolve(String(cwd || ''));
-      if (!abs) return [];
-      const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-');
-      const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
-      if (!fs.existsSync(dir)) return [];
-
-      const entries = fs.readdirSync(dir)
-        .filter((name) => name.endsWith('.jsonl'))
-        .map((name) => {
-          const full = path.join(dir, name);
-          try {
-            const st = fs.statSync(full);
-            if (!st.isFile()) return null;
-            return { name, full, size: st.size, mtimeMs: st.mtimeMs };
-          } catch { return null; }
-        })
-        .filter((e): e is { name: string; full: string; size: number; mtimeMs: number } => e !== null)
-        .sort((a, b) => b.mtimeMs - a.mtimeMs)
-        .slice(0, MAX_SESSIONS);
-
-      const claudeList = entries.map((e) => {
-        const uuid = e.name.replace(/\.jsonl$/, '');
-        return {
-          id: uuid,
-          title: parseTitle(e.full, e.size, e.mtimeMs, uuid),
-          cwd: abs,
-          mtimeMs: e.mtimeMs,
-          agent: 'claude' as const,
-          resumeCommand: `claude --resume ${uuid}`,
-        };
-      });
-
-      const codexList = listCodexSessions(abs);
-
-      return [...claudeList, ...codexList]
-        .sort((a, b) => b.mtimeMs - a.mtimeMs)
-        .slice(0, MAX_SESSIONS);
-    } catch {
-      return [];
-    }
-  });
+  ipcMain.handle('claude-sessions:list', (_e, cwd: string) => listResumableSessions(cwd));
 
   // Verify a session id is actually resumable in the given cwd. Agents store
   // sessions per-cwd (claude/kiro) — resuming in the wrong folder silently
@@ -2373,7 +2376,7 @@ app.whenReady().then(async () => {
         ...status,
       };
     }
-  });
+  }, listResumableSessions);
 
   // The AI config is already saved in the preference file; no extra restore needed
 

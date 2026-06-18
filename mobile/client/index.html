@@ -123,6 +123,11 @@
       <select id="new-cwd">
         <option value="">~ (默认)</option>
       </select>
+      <div id="resumable-section" style="display:none;">
+        <label>已有会话（点击恢复）</label>
+        <div id="resumable-list" class="resumable-list"></div>
+        <div class="resumable-divider">或新建</div>
+      </div>
       <div class="preset-label-row">
         <label>预设命令</label>
         <div class="preset-actions">
@@ -132,16 +137,6 @@
       </div>
       <select id="new-preset">
         <!-- 由 JS 动态渲染 -->
-      </select>
-      <label>配色</label>
-      <select id="new-theme">
-        <option value="default">默认</option>
-        <option value="vscode-dark">VS Code Dark</option>
-        <option value="monokai">Monokai</option>
-        <option value="dracula">Dracula</option>
-        <option value="solarized-dark">Solarized Dark</option>
-        <option value="one-dark">One Dark</option>
-        <option value="nord">Nord</option>
       </select>
       <div class="modal-actions">
         <button id="modal-cancel" class="btn-secondary">取消</button>

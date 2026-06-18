@@ -14,7 +14,7 @@ let token = localStorage.getItem('duocli_token') || '';
 let currentSessionId = null;
 let sseSource = null;
 // bump in lockstep with sw.js CACHE_NAME so a stale client cache is visible
-const CLIENT_BUILD = 'posse-v14';
+const CLIENT_BUILD = 'posse-v15';
 let lastServerInfo = null;
 
 // xterm.js 相关
@@ -2322,10 +2322,44 @@ $('new-session-btn').onclick = async () => {
     presetSelect.value = lastPreset;
     if (lastPreset && presetSelect.value !== lastPreset) presetSelect.value = '';
   }
-  const themeSelect = $('new-theme');
-  if (themeSelect) themeSelect.value = localStorage.getItem(MOBILE_THEME_KEY) || 'default';
   $('new-session-modal').classList.add('active');
+  loadResumableForCwd($('new-cwd').value);
 };
+
+async function loadResumableForCwd(cwd) {
+  const section = $('resumable-section');
+  const listEl = $('resumable-list');
+  if (!cwd) { if (section) section.style.display = 'none'; return; }
+  let items = [];
+  try { items = await api(`/api/resumable?cwd=${encodeURIComponent(cwd)}`); } catch { items = []; }
+  if (!Array.isArray(items) || !items.length) { if (section) section.style.display = 'none'; if (listEl) listEl.innerHTML=''; return; }
+  if (section) section.style.display = 'block';
+  listEl.innerHTML = items.map(it => `
+    <button type="button" class="resumable-item" data-cmd="${escHtml(it.resumeCommand)}" data-cwd="${escHtml(it.cwd)}">
+      <span class="resumable-title">${escHtml(it.title || it.id)}</span>
+      <span class="resumable-agent">${escHtml(it.agent || '')}</span>
+    </button>`).join('');
+  listEl.querySelectorAll('.resumable-item').forEach(btn => {
+    btn.onclick = () => resumeSession(btn.dataset.cwd, btn.dataset.cmd);
+  });
+}
+
+$('new-cwd').addEventListener('change', () => loadResumableForCwd($('new-cwd').value));
+
+async function resumeSession(cwd, cmd) {
+  $('new-session-modal').classList.remove('active');
+  try {
+    const session = await api('/api/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ cwd: cwd || undefined, presetCommand: cmd, themeId: 'default' }),
+    });
+    if (cwd) localStorage.setItem(MOBILE_LAST_CWD_KEY, cwd);
+    await refreshSessions();
+    openSession(session.id);
+  } catch (e) {
+    alert('恢复失败: ' + e.message);
+  }
+}
 
 $('modal-cancel').onclick = () => {
   $('new-session-modal').classList.remove('active');
@@ -2334,8 +2368,7 @@ $('modal-cancel').onclick = () => {
 $('modal-create').onclick = async () => {
   const cwd = $('new-cwd').value.trim() || '';
   const preset = $('new-preset').value;
-  const themeId = $('new-theme')?.value || 'default';
-  localStorage.setItem(MOBILE_THEME_KEY, themeId);
+  const themeId = 'default';
   $('new-session-modal').classList.remove('active');
 
   try {

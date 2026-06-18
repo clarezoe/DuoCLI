@@ -1412,3 +1412,14 @@ header h2 {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+.resumable-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; margin-bottom: 8px; }
+.resumable-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; text-align: left; padding: 10px 12px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+}
+.resumable-item:active { border-color: var(--accent); background: var(--bg2); }
+.resumable-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.resumable-agent { flex: 0 0 auto; font-size: 11px; color: var(--accent); font-family: 'SF Mono', Menlo, monospace; }
+.resumable-divider { text-align: center; color: var(--text2); font-size: 12px; margin: 8px 0 4px; }
