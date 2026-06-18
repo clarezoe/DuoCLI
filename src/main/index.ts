@@ -1833,6 +1833,20 @@ function registerIPC(): void {
     }
   });
 
+  // Move a file/folder to the OS trash (recoverable). Used by the file-tree context menu.
+  ipcMain.handle('file-tree:trash', async (_e, targetPath: string) => {
+    try {
+      if (typeof targetPath !== 'string' || !targetPath.trim()) {
+        return { ok: false, error: 'invalid-path' };
+      }
+      const abs = path.resolve(targetPath);
+      await shell.trashItem(abs);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   // Read file contents for the right-side preview panel (read-only, with size/binary guards)
   ipcMain.handle('fs:read-file', (_e, filePath: string) => {
     const MAX_PREVIEW_BYTES = 1024 * 1024; // 1MB cap to avoid lag

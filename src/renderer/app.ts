@@ -47,6 +47,7 @@ declare global {
       daemonRestart: () => Promise<{ ok: boolean; error?: string }>;
       selectFolder: (currentPath?: string) => Promise<string | null>;
       fileTreeListDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDir: boolean }>>;
+      fileTreeTrash: (p: string) => Promise<{ ok: boolean; error?: string }>;
       readFile: (filePath: string) => Promise<{ ok: boolean; content?: string; size?: number; ext?: string; error?: string }>;
       claudeSessionsList: (cwd: string) => Promise<Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: 'claude' | 'codex'; resumeCommand: string }>>;
       projectsList: (extra?: { extraFolders?: string[] }) => Promise<Array<{
@@ -1781,6 +1782,71 @@ function insertPathToActiveTerminal(filePath: string): void {
   writePtyWithAutoReset(activeId, quotePathForShell(filePath) + ' ');
 }
 
+// Lightweight confirm for trashing a folder (recoverable, so kept light). Resolves true on confirm.
+function confirmTrash(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `
+      <h3>Move to Trash</h3>
+      <p>Move "${name}" to Trash? You can restore it from the system Trash.</p>
+      <div class="confirm-buttons">
+        <button class="btn-cancel">Cancel</button>
+        <button class="btn-close-confirm" autofocus>Move to Trash</button>
+      </div>`;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    const cleanup = (r: boolean) => { overlay.remove(); resolve(r); };
+    dialog.querySelector('.btn-cancel')!.addEventListener('click', () => cleanup(false));
+    const okBtn = dialog.querySelector<HTMLButtonElement>('.btn-close-confirm')!;
+    okBtn.addEventListener('click', () => cleanup(true));
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) cleanup(false); });
+    overlay.addEventListener('keydown', (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); cleanup(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); cleanup(false); }
+    });
+    okBtn.focus();
+  });
+}
+
+// Send a file/folder to the OS trash, then refresh the affected directory in the tree.
+async function trashTreeItem(itemPath: string, isDir: boolean): Promise<void> {
+  const name = itemPath.split(/[/\\]/).pop() || itemPath;
+  // Folders get a light confirm; files trash directly (recoverable).
+  if (isDir) {
+    const ok = await confirmTrash(name);
+    if (!ok) return;
+  }
+  let res: { ok: boolean; error?: string };
+  try {
+    res = await window.posse.fileTreeTrash(itemPath);
+  } catch (err) {
+    showBriefNotice(`Failed to move "${name}" to Trash`);
+    console.error('fileTreeTrash failed', err);
+    return;
+  }
+  if (!res.ok) {
+    showBriefNotice(`Failed to move "${name}" to Trash`);
+    return;
+  }
+  // Invalidate the parent directory's cache so the tree re-reads it.
+  const parent = itemPath.replace(/[/\\][^/\\]+$/, '');
+  fileTreeChildrenCache.delete(parent);
+  if (isDir) {
+    // Drop any cached descendants and collapse the trashed folder.
+    fileTreeExpandedDirs.delete(itemPath);
+    for (const key of Array.from(fileTreeChildrenCache.keys())) {
+      if (key === itemPath || key.startsWith(itemPath + '/') || key.startsWith(itemPath + '\\')) {
+        fileTreeChildrenCache.delete(key);
+      }
+    }
+  }
+  await renderFileTree();
+  showBriefNotice(`Moved "${name}" to Trash`);
+}
+
 function showTreeContextMenu(e: MouseEvent, itemPath: string, isDir: boolean): void {
   // Remove any existing menu
   document.querySelectorAll('.term-context-menu').forEach(m => m.remove());
@@ -1788,7 +1854,7 @@ function showTreeContextMenu(e: MouseEvent, itemPath: string, isDir: boolean): v
   const menu = document.createElement('div');
   menu.className = 'term-context-menu';
 
-  const items: Array<{ label: string; action: () => void }> = [];
+  const items: Array<{ label: string; action: () => void; danger?: boolean; separated?: boolean }> = [];
 
   if (isDir) {
     items.push(
@@ -1804,10 +1870,14 @@ function showTreeContextMenu(e: MouseEvent, itemPath: string, isDir: boolean): v
       { label: 'Insert path into terminal', action: () => insertPathToActiveTerminal(itemPath) },
     );
   }
+  // Destructive (but recoverable) action: send to OS trash
+  items.push({ label: 'Move to Trash', action: () => { void trashTreeItem(itemPath, isDir); }, danger: true, separated: true });
 
   for (const it of items) {
     const el = document.createElement('div');
     el.className = 'term-context-item';
+    if (it.separated) el.classList.add('separated');
+    if (it.danger) el.classList.add('danger');
     el.textContent = it.label;
     el.addEventListener('click', () => { menu.remove(); it.action(); });
     menu.appendChild(el);

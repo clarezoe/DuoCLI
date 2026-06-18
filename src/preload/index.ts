@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('posse', {
   selectFolder: (currentPath?: string) => ipcRenderer.invoke('dialog:select-folder', currentPath),
   // Read directory tree (for the left-side file tree)
   fileTreeListDir: (dirPath: string) => ipcRenderer.invoke('file-tree:list-dir', dirPath),
+  // Move a file/folder to the OS trash (recoverable)
+  fileTreeTrash: (p: string) => ipcRenderer.invoke('file-tree:trash', p),
   // Read file contents (for the right-side read-only preview panel)
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   // List a directory's native session history in Claude Code

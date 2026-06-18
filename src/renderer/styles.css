@@ -2036,6 +2036,24 @@ select.ai-form-input {
   color: var(--text-primary);
 }
 
+/* Item visually separated from the group above (e.g. destructive action) */
+.term-context-item.separated {
+  margin-top: 5px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 8px;
+  border-radius: 0 0 6px 6px;
+}
+
+/* Destructive (but recoverable) action: Move to Trash */
+.term-context-item.danger {
+  color: var(--accent-red, #e06c75);
+}
+
+.term-context-item.danger:hover {
+  background: var(--accent-red, #e06c75);
+  color: #fff;
+}
+
 /* Selected option shows a green check (set ::before content via .selected) */
 .term-context-item.selected {
   color: var(--accent-green);
