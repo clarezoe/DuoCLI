@@ -585,7 +585,7 @@ export class TerminalManager {
       const stillActive = this.instances.get(id);
       if (!stillActive || stillActive !== target) return;
       try {
-        target.fitAddon.fit();
+        this.safeFit(target);
         if (this.onResize) {
           const { cols, rows } = target.terminal;
           if (cols > 0 && rows > 0) this.onResize(target.id, cols, rows);
@@ -653,6 +653,29 @@ export class TerminalManager {
     }
   }
 
+  // FitAddon.proposeDimensions() derives width from the PARENT element and a GUESSED
+  // scrollbar width, which overcounts columns here (text gets painted past the right
+  // edge and clipped — visible on both ASCII like "padding"→"paddi" and CJK glyphs).
+  // Measure the actual visible width instead: the .xterm-viewport's clientWidth already
+  // excludes the scrollbar and the element padding, so floor(clientWidth / cellWidth)
+  // can never overflow. Fall back to FitAddon if the DOM/metrics aren't ready.
+  private safeFit(inst: { terminal: import('@xterm/xterm').Terminal; fitAddon: FitAddon }): void {
+    const term = inst.terminal;
+    const core = (term as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } } })._core;
+    const cell = core?._renderService?.dimensions?.css?.cell;
+    const el = term.element;
+    const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (cell && cell.width > 0 && cell.height > 0 && viewport && viewport.clientWidth > 0 && viewport.clientHeight > 0) {
+      const cols = Math.max(2, Math.floor(viewport.clientWidth / cell.width));
+      const rows = Math.max(1, Math.floor(viewport.clientHeight / cell.height));
+      if (cols !== term.cols || rows !== term.rows) {
+        term.resize(cols, rows);
+      }
+      return;
+    }
+    inst.fitAddon.fit();
+  }
+
   fitActive(): void {
     if (!this.activeId) return;
     const inst = this.instances.get(this.activeId);
@@ -661,7 +684,7 @@ export class TerminalManager {
       // Record whether we were at the bottom before fit, then restore after, to avoid jumping to the top of the buffer.
       const buf = inst.terminal.buffer.active;
       const wasAtBottom = buf.baseY > 0 && buf.viewportY >= buf.baseY - 2;
-      inst.fitAddon.fit();
+      this.safeFit(inst);
       if (wasAtBottom) {
         inst.terminal.scrollToBottom();
       }

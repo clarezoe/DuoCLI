@@ -245,7 +245,22 @@ async function writeSession(id: string, data: string): Promise<void> {
 
 async function resizeSession(id: string, instance: TerminalInstance): Promise<void> {
   try {
-    instance.fitAddon.fit();
+    // Measure the actual visible width (.xterm-viewport clientWidth already excludes
+    // scrollbar + padding) rather than FitAddon's guessed geometry, which overcounts
+    // columns and clips the right-most glyph (ASCII "padding"→"paddi" and CJK alike).
+    const core = (instance.terminal as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } } })._core;
+    const cell = core?._renderService?.dimensions?.css?.cell;
+    const el = instance.terminal.element;
+    const vp = el?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (cell && cell.width > 0 && cell.height > 0 && vp && vp.clientWidth > 0 && vp.clientHeight > 0) {
+      const c = Math.max(2, Math.floor(vp.clientWidth / cell.width));
+      const r = Math.max(1, Math.floor(vp.clientHeight / cell.height));
+      if (c !== instance.terminal.cols || r !== instance.terminal.rows) {
+        instance.terminal.resize(c, r);
+      }
+    } else {
+      instance.fitAddon.fit();
+    }
     const cols = instance.terminal.cols;
     const rows = instance.terminal.rows;
     if (cols > 0 && rows > 0) {
