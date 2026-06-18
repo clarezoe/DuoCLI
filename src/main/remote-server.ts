@@ -430,8 +430,9 @@ export function startRemoteServer(
         const data = JSON.parse(msg.toString());
 
         if (data.type === 'subscribe' && data.sessionId) {
-          if (subscribedSession) wsClients.get(subscribedSession)?.delete(ws);
+          if (subscribedSession) { wsClients.get(subscribedSession)?.delete(ws); ptyManager.removeRemoteViewer(subscribedSession); }
           subscribedSession = data.sessionId;
+          ptyManager.addRemoteViewer(data.sessionId);
           if (!wsClients.has(data.sessionId)) wsClients.set(data.sessionId, new Set());
           const sessionClients = wsClients.get(data.sessionId);
           if (sessionClients) sessionClients.add(ws);
@@ -454,7 +455,7 @@ export function startRemoteServer(
 
         // Mobile resize — adjust pty size in sync so output is laid out to the phone's column count
         if (data.type === 'resize' && subscribedSession && data.cols && data.rows) {
-          await ptyManager.resize(subscribedSession, data.cols, data.rows);
+          await ptyManager.resize(subscribedSession, data.cols, data.rows, 'remote');
         }
 
         // Heartbeat ping, just ignore
@@ -466,7 +467,7 @@ export function startRemoteServer(
     });
 
     ws.on('close', () => {
-      if (subscribedSession) wsClients.get(subscribedSession)?.delete(ws);
+      if (subscribedSession) { wsClients.get(subscribedSession)?.delete(ws); ptyManager.removeRemoteViewer(subscribedSession); }
       notifyConnectionStatusChanged();
     });
   });

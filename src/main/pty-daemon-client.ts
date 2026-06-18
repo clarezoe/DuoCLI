@@ -13,6 +13,7 @@ export class PtyDaemonClient implements PtyBackend {
   private events: PtyBackendEvents;
   private sessions = new Map<string, PtySessionSnapshot>();
   private ws: WebSocket | null = null;
+  private remoteViewers = new Map<string, number>();
 
   private constructor(config: PtyDaemonConfig, events: PtyBackendEvents) {
     this.config = config;
@@ -46,7 +47,21 @@ export class PtyDaemonClient implements PtyBackend {
     await this.request('POST', `/api/sessions/${encodeURIComponent(id)}/write`, { data });
   }
 
-  async resize(id: string, cols: number, rows: number): Promise<void> {
+  addRemoteViewer(id: string): void {
+    this.remoteViewers.set(id, (this.remoteViewers.get(id) || 0) + 1);
+  }
+
+  removeRemoteViewer(id: string): void {
+    const n = (this.remoteViewers.get(id) || 0) - 1;
+    if (n <= 0) this.remoteViewers.delete(id);
+    else this.remoteViewers.set(id, n);
+  }
+
+  async resize(id: string, cols: number, rows: number, source: 'local' | 'remote' = 'local'): Promise<void> {
+    // Desktop (local) yields to an actively-viewing mobile client: while a remote viewer
+    // is subscribed to this session, ignore local resizes so the PTY keeps the phone's
+    // column count. The desktop's periodic re-fit reclaims width once the viewer leaves.
+    if (source === 'local' && (this.remoteViewers.get(id) || 0) > 0) return;
     await this.request('POST', `/api/sessions/${encodeURIComponent(id)}/resize`, { cols, rows });
   }
 

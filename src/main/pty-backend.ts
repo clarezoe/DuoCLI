@@ -28,7 +28,9 @@ export interface PtyBackendEvents {
 export interface PtyBackend {
   create(cwd: string, presetCommand: string, themeId: string, envOverrides?: Record<string, string>): Promise<PtySessionSnapshot>;
   write(id: string, data: string): Promise<void>;
-  resize(id: string, cols: number, rows: number): Promise<void>;
+  resize(id: string, cols: number, rows: number, source?: 'local' | 'remote'): Promise<void>;
+  addRemoteViewer(id: string): void;
+  removeRemoteViewer(id: string): void;
   destroy(id: string): Promise<void>;
   getSession(id: string): PtySessionSnapshot | undefined;
   getAllSessions(): PtySessionSnapshot[];

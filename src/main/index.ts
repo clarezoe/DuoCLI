@@ -1384,7 +1384,7 @@ function registerIPC(): void {
 
   // Resize
   ipcMain.handle('pty:resize', async (_e, id: string, cols: number, rows: number) => {
-    await ptyManager.resize(id, cols, rows);
+    await ptyManager.resize(id, cols, rows, 'local');
     return true;
   });
 
