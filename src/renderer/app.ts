@@ -1998,7 +1998,7 @@ function showSessionContextMenu(e: MouseEvent, targetId: string): void {
 function sessionStatusColor(id: string): string {
   if (sessionBusy.has(id)) return '#e5a100';
   if (sessionUnread.has(id)) return '#73c991';
-  return '#666';
+  return '#2ea043';
 }
 
 // Build a session row for a LIVE PTY session inside a project (compact: title + relative time)
@@ -2013,6 +2013,7 @@ function buildLiveSessionRow(id: string, activeId: string | null): HTMLElement {
   const dot = document.createElement('span');
   dot.className = 'nav-session-dot';
   dot.style.backgroundColor = sessionStatusColor(id);
+  if (sessionBusy.has(id)) dot.classList.add('nav-session-dot-busy');
 
   const titleSpan = document.createElement('span');
   titleSpan.className = 'nav-session-title';
@@ -2061,7 +2062,7 @@ function buildClosedSessionRow(cs: ClosedSessionInfo): HTMLElement {
 
   const dot = document.createElement('span');
   dot.className = 'nav-session-dot';
-  dot.style.backgroundColor = '#555';
+  dot.style.backgroundColor = '#666';
 
   const titleSpan = document.createElement('span');
   titleSpan.className = 'nav-session-title';
@@ -2104,7 +2105,7 @@ function buildHistorySessionRow(s: ClaudeHistorySession): HTMLElement {
 
   const dot = document.createElement('span');
   dot.className = 'nav-session-dot';
-  dot.style.backgroundColor = '#d9775788';
+  dot.style.backgroundColor = '#666';
 
   const titleSpan = document.createElement('span');
   titleSpan.className = 'nav-session-title';
