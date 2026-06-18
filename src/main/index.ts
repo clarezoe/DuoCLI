@@ -693,6 +693,10 @@ function readFirstLine(filePath: string, maxBytes = 16 * 1024): string {
 // cwd is in session_meta.payload.cwd on each file's first line; the title is in ~/.codex/session_index.jsonl
 // A Codex thread_name is "default" (unnamed) when it's empty, equals the session id,
 // or is just a UUID — in those cases we derive a title from the first real user prompt.
+// Codex's CLI-detection sends a "what's 2+2?" health-check probe, creating throwaway
+// sessions. Match it so we can skip it as a title source and filter probe-only sessions.
+const CODEX_PROBE_RE = /^\s*what'?s?\s+(is\s+)?2\s*\+\s*2\s*\??\s*$/i;
+
 function codexTitleIsDefault(title: string, id: string): boolean {
   if (!title || title === id) return true;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(title.trim());
@@ -711,6 +715,7 @@ function codexFirstUserPrompt(filePath: string): string {
       try { obj = JSON.parse(trimmed); } catch { continue; }
       if (obj.type === 'event_msg' && obj.payload && obj.payload.type === 'user_message' && typeof obj.payload.message === 'string') {
         const cleaned = cleanSessionTitle(obj.payload.message);
+        if (CODEX_PROBE_RE.test(cleaned)) continue;
         if (isRealUserPrompt(cleaned)) {
           return cleaned.length > 40 ? cleaned.slice(0, 40) + '…' : cleaned;
         }
@@ -718,12 +723,6 @@ function codexFirstUserPrompt(filePath: string): string {
     }
   } catch { /* unreadable — fall through */ }
   return '';
-}
-
-function resolveCodexTitle(id: string, rawTitle: string | undefined, filePath: string): string {
-  const title = rawTitle || '';
-  if (!codexTitleIsDefault(title, id)) return title;
-  return codexFirstUserPrompt(filePath) || id;
 }
 
 function listCodexSessions(targetCwd: string): AgentHistorySession[] {
@@ -795,9 +794,17 @@ function listCodexSessions(targetCwd: string): AgentHistorySession[] {
               if (fileCwd !== normTarget) continue;
               const id = String(obj.payload.id || '');
               if (!id) continue;
+              const rawTn = titleMap.get(id);
+              let codexTitle: string;
+              if (rawTn && !codexTitleIsDefault(rawTn, id)) {
+                codexTitle = rawTn;                 // real thread_name wins
+              } else {
+                codexTitle = codexFirstUserPrompt(full);   // skips probes; '' if probe-only/empty
+                if (!codexTitle) continue;          // filter out detection-probe / empty sessions
+              }
               results.push({
                 id,
-                title: resolveCodexTitle(id, titleMap.get(id), full),
+                title: codexTitle,
                 cwd: normTarget,
                 mtimeMs: st.mtimeMs,
                 agent: 'codex',
@@ -1163,11 +1170,19 @@ function discoverCodexSessions(): DiscoveredSession[] {
         // cwd appears in payload before the giant base_instructions block.
         const cwdMatch = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/);
         const cwdRaw = cwdMatch ? cwdMatch[1].replace(/\\(.)/g, '$1') : '';
+        const rawTn = titleMap.get(id);
+        let codexTitle: string;
+        if (rawTn && !codexTitleIsDefault(rawTn, id)) {
+          codexTitle = rawTn;                 // real thread_name wins
+        } else {
+          codexTitle = codexFirstUserPrompt(f.full);   // skips probes; '' if probe-only/empty
+          if (!codexTitle) continue;          // filter out detection-probe / empty sessions
+        }
         out.push({
           agent: 'codex',
           cwd: cwdRaw ? path.resolve(cwdRaw) : '',
           id,
-          title: resolveCodexTitle(id, titleMap.get(id), f.full),
+          title: codexTitle,
           mtimeMs: f.mtimeMs,
           resumeCommand: `codex resume ${id}`,
         });
