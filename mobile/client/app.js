@@ -14,24 +14,28 @@ let token = localStorage.getItem('duocli_token') || '';
 let currentSessionId = null;
 let sseSource = null;
 // bump in lockstep with sw.js CACHE_NAME so a stale client cache is visible
-const CLIENT_BUILD = 'posse-v20';
+const CLIENT_BUILD = 'posse-v21';
 let lastServerInfo = null;
 
 // xterm.js 相关
 let term = null;
 let fitAddon = null;
 
-// proposeDimensions() floors a fractional cell width, so the right-most (esp.
-// double-width CJK) glyph can clip under the scrollbar. Reserve one column.
+// Measure the real visible width (.xterm-viewport clientWidth excludes scrollbar +
+// padding) instead of FitAddon's guessed geometry, which overcounts columns and clips
+// the right-most glyph (ASCII "padding"->"paddi" and CJK alike). Fall back to fit().
 function safeFit() {
   if (!fitAddon || !term) return;
-  const p = fitAddon.proposeDimensions && fitAddon.proposeDimensions();
-  if (p && p.cols > 0 && p.rows > 0) {
-    const c = Math.max(2, p.cols - 1);
-    if (c !== term.cols || p.rows !== term.rows) term.resize(c, p.rows);
-  } else {
-    fitAddon.fit();
+  const rs = term._core && term._core._renderService;
+  const cell = rs && rs.dimensions && rs.dimensions.css && rs.dimensions.css.cell;
+  const vp = term.element && term.element.querySelector('.xterm-viewport');
+  if (cell && cell.width > 0 && cell.height > 0 && vp && vp.clientWidth > 0 && vp.clientHeight > 0) {
+    const c = Math.max(2, Math.floor(vp.clientWidth / cell.width));
+    const r = Math.max(1, Math.floor(vp.clientHeight / cell.height));
+    if (c !== term.cols || r !== term.rows) term.resize(c, r);
+    return;
   }
+  fitAddon.fit();
 }
 let ws = null;
 let wsHeartbeat = null;

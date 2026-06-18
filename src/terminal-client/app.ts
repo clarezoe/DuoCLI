@@ -245,13 +245,18 @@ async function writeSession(id: string, data: string): Promise<void> {
 
 async function resizeSession(id: string, instance: TerminalInstance): Promise<void> {
   try {
-    // Reserve one column: proposeDimensions() floors a fractional cell width, so the
-    // right-most (esp. double-width CJK) glyph can clip under the scrollbar.
-    const proposed = instance.fitAddon.proposeDimensions();
-    if (proposed && proposed.cols > 0 && proposed.rows > 0) {
-      const c = Math.max(2, proposed.cols - 1);
-      if (c !== instance.terminal.cols || proposed.rows !== instance.terminal.rows) {
-        instance.terminal.resize(c, proposed.rows);
+    // Measure the actual visible width (.xterm-viewport clientWidth already excludes
+    // scrollbar + padding) rather than FitAddon's guessed geometry, which overcounts
+    // columns and clips the right-most glyph (ASCII "padding"→"paddi" and CJK alike).
+    const core = (instance.terminal as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } } })._core;
+    const cell = core?._renderService?.dimensions?.css?.cell;
+    const el = instance.terminal.element;
+    const vp = el?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (cell && cell.width > 0 && cell.height > 0 && vp && vp.clientWidth > 0 && vp.clientHeight > 0) {
+      const c = Math.max(2, Math.floor(vp.clientWidth / cell.width));
+      const r = Math.max(1, Math.floor(vp.clientHeight / cell.height));
+      if (c !== instance.terminal.cols || r !== instance.terminal.rows) {
+        instance.terminal.resize(c, r);
       }
     } else {
       instance.fitAddon.fit();

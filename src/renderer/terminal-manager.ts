@@ -653,20 +653,27 @@ export class TerminalManager {
     }
   }
 
-  // FitAddon.proposeDimensions() floors cols from a fractional cell width, so the
-  // last column can render a fraction of a pixel past the right edge — most visible
-  // with double-width CJK glyphs, whose right half gets clipped under the scrollbar.
-  // Reserve one column so there is always >= one full cell of slack.
+  // FitAddon.proposeDimensions() derives width from the PARENT element and a GUESSED
+  // scrollbar width, which overcounts columns here (text gets painted past the right
+  // edge and clipped — visible on both ASCII like "padding"→"paddi" and CJK glyphs).
+  // Measure the actual visible width instead: the .xterm-viewport's clientWidth already
+  // excludes the scrollbar and the element padding, so floor(clientWidth / cellWidth)
+  // can never overflow. Fall back to FitAddon if the DOM/metrics aren't ready.
   private safeFit(inst: { terminal: import('@xterm/xterm').Terminal; fitAddon: FitAddon }): void {
-    const proposed = inst.fitAddon.proposeDimensions();
-    if (proposed && proposed.cols > 0 && proposed.rows > 0) {
-      const cols = Math.max(2, proposed.cols - 1);
-      if (cols !== inst.terminal.cols || proposed.rows !== inst.terminal.rows) {
-        inst.terminal.resize(cols, proposed.rows);
+    const term = inst.terminal;
+    const core = (term as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { width: number; height: number } } } } } })._core;
+    const cell = core?._renderService?.dimensions?.css?.cell;
+    const el = term.element;
+    const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (cell && cell.width > 0 && cell.height > 0 && viewport && viewport.clientWidth > 0 && viewport.clientHeight > 0) {
+      const cols = Math.max(2, Math.floor(viewport.clientWidth / cell.width));
+      const rows = Math.max(1, Math.floor(viewport.clientHeight / cell.height));
+      if (cols !== term.cols || rows !== term.rows) {
+        term.resize(cols, rows);
       }
-    } else {
-      inst.fitAddon.fit();
+      return;
     }
+    inst.fitAddon.fit();
   }
 
   fitActive(): void {
