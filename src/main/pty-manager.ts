@@ -6,6 +6,13 @@ import * as crypto from 'crypto';
 import { execSync, spawn } from 'child_process';
 import { requestTitleFromConfiguredAI, TitleAIConfig } from './title-ai';
 
+// Max bytes of ANSI output the daemon retains per session for terminal replay.
+// Tradeoff: larger = more desktop scrollback survives an app restart (the daemon outlives the app and
+// the renderer replays the whole buffer on reconnect); the cost is ~this many bytes of RAM per live session.
+// Mobile/remote first-paint does NOT use this size directly — remote-server slices a small tail (see
+// MOBILE_REPLAY_TAIL_BYTES) so weak-network first-paint stays fast regardless of this cap.
+export const RAW_BUFFER_MAX_BYTES = 1024 * 1024; // 1MB
+
 export interface PtySession {
   id: string;
   ptyProcess: pty.IPty;
@@ -497,14 +504,20 @@ export class PtyManager {
       if (session.buffer.length > 5000) {
         session.buffer = session.buffer.slice(-2500);
       }
-      // rawBuffer is used for remote terminal replay (on weak networks, replay size directly drives first-paint speed;
-      // cap 128KB: enough for several screens of visible content + some scrollback, beyond which scrolling is unlikely anyway)
+      // rawBuffer is the full ANSI output retained by the daemon (which survives app restart).
+      // It serves TWO consumers with opposite needs:
+      //   1. Desktop renderer reconnect (after app restart) replays the WHOLE rawBuffer -> wants as much
+      //      scrollback as possible so users can scroll back to pre-restart output.
+      //   2. Mobile / remote first-paint replays only a BOUNDED TAIL (sliced in remote-server.ts) -> on weak
+      //      networks replay size drives first-paint speed, so it must stay small.
+      // The daemon therefore retains a large cap (desktop scrollback), and the mobile path slices a tail at send time.
+      // Memory cost is ~RAW_BUFFER_MAX_BYTES per live session, negligible on desktop.
       session.rawBuffer += data;
-      if (session.rawBuffer.length > 131072) {
+      if (session.rawBuffer.length > RAW_BUFFER_MAX_BYTES) {
         // A direct slice may cut an ANSI escape sequence in half (a truncated ESC),
         // and on replay xterm would treat following visible chars as parameters of the broken sequence -> spinner torn across lines.
         // Push the cut point forward to the next ESC byte to ensure recovery starts at the beginning of a complete sequence.
-        let cut = session.rawBuffer.length - 131072;
+        let cut = session.rawBuffer.length - RAW_BUFFER_MAX_BYTES;
         const nextEsc = session.rawBuffer.indexOf('\x1b', cut);
         if (nextEsc !== -1 && nextEsc - cut < 4096) cut = nextEsc;
         session.rawBuffer = session.rawBuffer.slice(cut);
