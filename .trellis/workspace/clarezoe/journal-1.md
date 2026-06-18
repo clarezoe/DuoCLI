@@ -112,3 +112,36 @@ Renderer session-status dots: working=amber+pulse, waiting-for-decision=red warn
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Clean stale saddism/DuoCLI refs to Fei2-Labs/posse
+
+**Date**: 2026-06-18
+**Task**: Clean stale saddism/DuoCLI refs to Fei2-Labs/posse
+**Branch**: `main`
+
+### Summary
+
+Pointed in-app GitHub link + docs URLs to Fei2-Labs/posse, updated user-facing DuoCLI brand strings (electron-builder, CI release heading, mobile PWA, frp) to Posse. Left legacy migration scripts, internal ids, real filenames, and historical records untouched. Noted: GitHub 'ahead of saddism/DuoCLI' banner is a fork-network relationship, needs GitHub Support to detach.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f5185c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
