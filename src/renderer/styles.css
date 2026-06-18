@@ -831,9 +831,33 @@ html, body {
 }
 
 .remote-info-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  font: inherit;
   font-weight: 600;
-  margin-bottom: 4px;
   color: var(--text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.remote-info-chevron {
+  display: inline-block;
+  font-size: 10px;
+  opacity: 0.7;
+  transition: transform 0.12s ease;
+}
+
+.remote-info-title[aria-expanded="true"] .remote-info-chevron {
+  transform: rotate(90deg);
+}
+
+.remote-info-body {
+  margin-top: 4px;
 }
 
 .remote-info-qr {
@@ -1977,13 +2001,13 @@ select.ai-form-input {
 
 /* Sidebar footer / copyright */
 #sidebar-footer {
-  padding: 10px 12px;
+  padding: 6px 12px;
   border-top: 1px solid var(--border-color);
   font-size: 10px;
   color: var(--text-secondary);
   text-align: center;
   flex-shrink: 0;
-  line-height: 1.6;
+  line-height: 1.4;
   opacity: 0.7;
 }
 
@@ -1993,10 +2017,11 @@ select.ai-form-input {
 
 .footer-line {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.footer-version {
-  margin-top: 2px;
+.footer-compact {
   font-variant-numeric: tabular-nums;
 }
 
@@ -2010,16 +2035,10 @@ select.ai-form-input {
   text-decoration: underline;
 }
 
-.footer-tagline {
-  font-size: 10px;
-  color: var(--text-secondary);
-  opacity: 0.8;
-}
-
 .footer-build {
   font-family: var(--font-mono);
-  font-size: 10px;
-  opacity: 0.7;
+  font-size: 9px;
+  opacity: 0.55;
 }
 
 /* ========== Custom preset dialog ========== */

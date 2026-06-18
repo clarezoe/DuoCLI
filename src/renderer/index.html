@@ -125,13 +125,17 @@
       </div>
       <!-- Remote server connection info -->
       <div id="remote-server-info" class="remote-server-info" style="display: none;">
-        <div class="remote-info-title">Mobile Access</div>
-        <div class="remote-info-qr"><img class="remote-info-qr-img" alt="Scan to connect" /></div>
-        <div class="remote-info-scan-hint">Scan with your phone to connect</div>
-        <div class="remote-info-url" title="Tap to copy"></div>
-        <div class="remote-info-lan"></div>
-        <div class="remote-info-token"></div>
-        <div class="remote-info-setup-hint"></div>
+        <button type="button" class="remote-info-title" id="remote-info-toggle" aria-expanded="false">
+          <span class="remote-info-chevron">▸</span><span>Mobile Access</span>
+        </button>
+        <div class="remote-info-body" id="remote-info-body" hidden>
+          <div class="remote-info-qr"><img class="remote-info-qr-img" alt="Scan to connect" /></div>
+          <div class="remote-info-scan-hint">Scan with your phone to connect</div>
+          <div class="remote-info-url" title="Tap to copy"></div>
+          <div class="remote-info-lan"></div>
+          <div class="remote-info-token"></div>
+          <div class="remote-info-setup-hint"></div>
+        </div>
       </div>
       <!-- Sessions Tab: Codex-style project navigator -->
       <div id="tab-sessions" class="tab-content active">
@@ -144,11 +148,7 @@
 
       <!-- Footer / copyright -->
       <div id="sidebar-footer">
-        <div class="footer-line">Posse — your AI agent terminal command center</div>
-        <div class="footer-line footer-tagline">Your AI coding posse</div>
-        <div class="footer-line"><a id="footer-github" href="#">GitHub</a></div>
-        <div class="footer-line footer-version">Version <span id="app-version">v?</span></div>
-        <div class="footer-line footer-build" id="app-build" title="git short SHA (* = uncommitted changes) · build time"></div>
+        <div class="footer-line footer-compact">Posse <span id="app-version">v?</span> · <a id="footer-github" href="#">GitHub</a> <span id="app-build" class="footer-build" title="git short SHA (* = uncommitted changes) · build time"></span></div>
       </div>
     </div>
 

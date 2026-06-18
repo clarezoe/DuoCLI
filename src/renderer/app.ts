@@ -3956,6 +3956,31 @@ window.posse.onCloseCurrentSession(() => {
   void closeCurrentSession();
 });
 
+// ========== Mobile Access collapse toggle ==========
+
+const MOBILE_ACCESS_EXPANDED_KEY = 'posse_mobile_access_expanded';
+const remoteInfoToggleEl = document.getElementById('remote-info-toggle');
+const remoteInfoBodyEl = document.getElementById('remote-info-body');
+
+function applyMobileAccessExpanded(expanded: boolean): void {
+  if (!remoteInfoToggleEl || !remoteInfoBodyEl) return;
+  remoteInfoToggleEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  remoteInfoBodyEl.hidden = !expanded;
+}
+
+if (remoteInfoToggleEl && remoteInfoBodyEl) {
+  const stored = localStorage.getItem(MOBILE_ACCESS_EXPANDED_KEY) === 'true';
+  applyMobileAccessExpanded(stored);
+
+  remoteInfoToggleEl.addEventListener('click', () => {
+    const next = remoteInfoToggleEl.getAttribute('aria-expanded') !== 'true';
+    applyMobileAccessExpanded(next);
+    localStorage.setItem(MOBILE_ACCESS_EXPANDED_KEY, next ? 'true' : 'false');
+    // Re-render so the QR is (re)generated if server info arrived while collapsed.
+    if (next) renderRemoteServerInfo();
+  });
+}
+
 // ========== Footer interactions ==========
 
 // GitHub link
