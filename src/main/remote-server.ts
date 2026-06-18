@@ -30,6 +30,23 @@ export type RemoteConnectionStatus = RemoteServerInfo & {
   subscribedSessions: number;
 };
 
+// Mobile / remote first-paint replay tail size. The daemon retains a much larger rawBuffer (1MB) so desktop
+// reconnect can restore full scrollback after a restart, but on weak networks the replay payload directly drives
+// first-paint speed, so we only send the last ~128KB to a (re)attaching remote/mobile viewer. This keeps mobile
+// first-paint identical to before regardless of how much scrollback the daemon retains.
+const MOBILE_REPLAY_TAIL_BYTES = 131072; // 128KB
+
+// Slice the last `maxBytes` of an ANSI stream, advancing the cut point to the next ESC byte so we never start
+// replay in the middle of an escape sequence (xterm would otherwise treat following visible chars as broken
+// sequence parameters -> torn spinners / garbled first line).
+function tailRawBuffer(buf: string, maxBytes: number): string {
+  if (buf.length <= maxBytes) return buf;
+  let cut = buf.length - maxBytes;
+  const nextEsc = buf.indexOf('\x1b', cut);
+  if (nextEsc !== -1 && nextEsc - cut < 4096) cut = nextEsc;
+  return buf.slice(cut);
+}
+
 // Cache ptyManager and callbacks for remote creation (set in startRemoteServer)
 let cachedPtyManager: PtyBackend | null = null;
 let cachedOnRemoteCreate: ((sessionInfo: any) => void) | null = null;
@@ -439,9 +456,11 @@ export function startRemoteServer(
           if (sessionClients) sessionClients.add(ws);
           notifyConnectionStatusChanged();
 
-          // Replay the historical buffer (always send replay, even if rawBuffer is empty, so the client knows the subscription took effect)
+          // Replay the historical buffer (always send replay, even if rawBuffer is empty, so the client knows the subscription took effect).
+          // Only send a bounded tail: the daemon may retain up to 1MB of scrollback for desktop, but on weak networks
+          // first-paint speed scales with payload size, so cap the mobile replay at MOBILE_REPLAY_TAIL_BYTES.
           const rawBuffer = await ptyManager.getRawBuffer(data.sessionId).catch(() => '');
-          ws.send(JSON.stringify({ type: 'replay', data: rawBuffer }));
+          ws.send(JSON.stringify({ type: 'replay', data: tailRawBuffer(rawBuffer, MOBILE_REPLAY_TAIL_BYTES) }));
         }
 
         if (data.type === 'input' && subscribedSession) {

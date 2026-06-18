@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import WebSocket from 'ws';
 import { PtyBackend, PtyBackendEvents, PtySessionSnapshot } from './pty-backend';
 import { getPtyDaemonConfigPath, loadOrCreatePtyDaemonConfig, PtyDaemonConfig } from './pty-daemon-config';
+import { RAW_BUFFER_MAX_BYTES } from './pty-manager';
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -243,8 +244,16 @@ export class PtyDaemonClient implements PtyBackend {
     if (event.type === 'rawData' && typeof event.data === 'string') {
       const session = this.sessions.get(event.id);
       if (session) {
+        // Mirror the daemon's retained rawBuffer (kept fresh from the live stream). Match the daemon cap so this
+        // in-memory copy doesn't truncate below what the daemon keeps. Advance the cut to the next ESC to avoid
+        // slicing an escape sequence in half (consistent with pty-manager / remote-server slicing).
         let rawBuffer = session.rawBuffer + event.data;
-        if (rawBuffer.length > 131072) rawBuffer = rawBuffer.slice(-131072);
+        if (rawBuffer.length > RAW_BUFFER_MAX_BYTES) {
+          let cut = rawBuffer.length - RAW_BUFFER_MAX_BYTES;
+          const nextEsc = rawBuffer.indexOf('\x1b', cut);
+          if (nextEsc !== -1 && nextEsc - cut < 4096) cut = nextEsc;
+          rawBuffer = rawBuffer.slice(cut);
+        }
         this.sessions.set(event.id, { ...session, rawBuffer });
       }
       this.events.onRawData?.(event.id, event.data);
