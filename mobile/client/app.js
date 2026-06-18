@@ -14,7 +14,7 @@ let token = localStorage.getItem('duocli_token') || '';
 let currentSessionId = null;
 let sseSource = null;
 // bump in lockstep with sw.js CACHE_NAME so a stale client cache is visible
-const CLIENT_BUILD = 'posse-v18';
+const CLIENT_BUILD = 'posse-v19';
 let lastServerInfo = null;
 
 // xterm.js 相关
@@ -1140,30 +1140,38 @@ function createTerminal() {
         markUserScrolling();
       });
 
+      // 测量实际行高（像素 → 行数换算用），取不到时退回到经验值 17px
+      const getCellHeight = () => {
+        const rows = container.querySelector('.xterm-rows');
+        const h = rows && rows.children[0] ? rows.children[0].getBoundingClientRect().height : 0;
+        return h > 0 ? h : 17;
+      };
+
       let touchLastY = 0;
       let touchActive = false;
+      let touchAccum = 0;
       const onTouchStart = (e) => {
         if (e.touches.length !== 1) { touchActive = false; return; }
         touchLastY = e.touches[0].clientY;
+        touchAccum = 0;
         touchActive = true;
       };
       const onTouchMove = (e) => {
-        if (!touchActive || !viewport || e.touches.length !== 1) return;
+        if (!touchActive || e.touches.length !== 1) return;
         const currentY = e.touches[0].clientY;
         const deltaY = touchLastY - currentY;
+        touchLastY = currentY;
         if (deltaY === 0) return;
-        const before = viewport.scrollTop;
-        const max = viewport.scrollHeight - viewport.clientHeight;
-        const next = Math.max(0, Math.min(max, before + deltaY));
-        if (next !== before) {
-          viewport.scrollTop = next;
-          touchLastY = currentY;
+        // 直接操作 xterm 视口（scrollLines），避免 viewport.scrollTop 被 xterm 渲染时回弹
+        // 手指下滑 currentY>touchLastY → deltaY<0 → lines<0 → 向上看更早的内容
+        const cellH = getCellHeight();
+        touchAccum += deltaY;
+        const lines = Math.trunc(touchAccum / cellH);
+        if (lines !== 0) {
+          touchAccum -= lines * cellH;
+          term.scrollLines(lines);
           markUserScrolling();
-          // 仅在确实滚动时阻止页面滚动，到顶/到底时让浏览器接管（避免卡死）
           if (e.cancelable) e.preventDefault();
-        } else {
-          // 到达边界，更新基准点避免反向滑动需要先抵消累计量
-          touchLastY = currentY;
         }
       };
       const onTouchEnd = () => {
@@ -1187,6 +1195,7 @@ function createTerminal() {
         container.dataset.scrollFallbackBound = '1';
         let fbLastY = 0;
         let fbActive = false;
+        let fbAccum = 0;
         const isHandledByInner = (e) => {
           const t = e.target;
           if (!t || !t.closest) return false;
@@ -1196,25 +1205,25 @@ function createTerminal() {
           if (isHandledByInner(e)) { fbActive = false; return; }
           if (e.touches.length !== 1) { fbActive = false; return; }
           fbLastY = e.touches[0].clientY;
+          fbAccum = 0;
           fbActive = true;
         }, { passive: true });
         container.addEventListener('touchmove', (e) => {
           if (!fbActive || !term || e.touches.length !== 1) return;
           if (isHandledByInner(e)) return;
-          if (!viewport) return;
           const currentY = e.touches[0].clientY;
           const deltaY = fbLastY - currentY;
+          fbLastY = currentY;
           if (deltaY === 0) return;
-          const before = viewport.scrollTop;
-          const max = viewport.scrollHeight - viewport.clientHeight;
-          const next = Math.max(0, Math.min(max, before + deltaY));
-          if (next !== before) {
-            viewport.scrollTop = next;
-            fbLastY = currentY;
+          // 同上：用 scrollLines 滚动 xterm 视口，避免 scrollTop 回弹
+          const cellH = getCellHeight();
+          fbAccum += deltaY;
+          const lines = Math.trunc(fbAccum / cellH);
+          if (lines !== 0) {
+            fbAccum -= lines * cellH;
+            term.scrollLines(lines);
             markUserScrolling();
             if (e.cancelable) e.preventDefault();
-          } else {
-            fbLastY = currentY;
           }
         }, { passive: false });
         const fbEnd = () => {
