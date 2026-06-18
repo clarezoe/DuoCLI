@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const pkg = require('../package.json');
-const version = pkg.version;
+const version = process.env.POSSE_VERSION || pkg.version;
 const root = path.resolve(__dirname, '..');
 const releaseDir = path.join(root, 'release', 'mac-arm64');
 const appName = 'Posse';
