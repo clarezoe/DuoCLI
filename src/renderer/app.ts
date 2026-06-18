@@ -1370,7 +1370,15 @@ const sidebarResizer = document.getElementById('sidebar-resizer')!;
 // ========== Projects panel toolbar: search + sort ==========
 (function initProjectToolbar() {
   const searchInput = document.getElementById('project-search') as HTMLInputElement | null;
+  const searchClear = document.getElementById('project-search-clear');
   const sortBtn = document.getElementById('project-sort') as HTMLButtonElement | null;
+
+  const toggleSearchClear = (): void => {
+    if (!searchClear || !searchInput) return;
+    if (searchInput.value.length > 0) searchClear.removeAttribute('hidden');
+    else searchClear.setAttribute('hidden', '');
+  };
+  toggleSearchClear();
 
   const updateSortLabel = (): void => {
     if (sortBtn) sortBtn.textContent = projectSortMode === 'name' ? 'Name' : 'Recent';
@@ -1380,6 +1388,7 @@ const sidebarResizer = document.getElementById('sidebar-resizer')!;
   if (searchInput) {
     let debounce: ReturnType<typeof setTimeout> | undefined;
     searchInput.addEventListener('input', () => {
+      toggleSearchClear();
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => {
         projectSearchQuery = searchInput.value.trim().toLowerCase();
@@ -1387,6 +1396,15 @@ const sidebarResizer = document.getElementById('sidebar-resizer')!;
       }, 120);
     });
   }
+
+  searchClear?.addEventListener('click', () => {
+    if (!searchInput) return;
+    searchInput.value = '';
+    projectSearchQuery = '';
+    searchClear.setAttribute('hidden', '');
+    renderSessionList();
+    searchInput.focus();
+  });
 
   if (sortBtn) {
     sortBtn.addEventListener('click', () => {

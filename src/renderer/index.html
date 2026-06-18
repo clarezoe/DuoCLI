@@ -140,7 +140,10 @@
       <!-- Sessions Tab: Codex-style project navigator -->
       <div id="tab-sessions" class="tab-content active">
         <div id="project-toolbar">
-          <input id="project-search" type="text" placeholder="Search…" autocomplete="off" spellcheck="false" />
+          <div id="project-search-wrap">
+            <input id="project-search" type="text" placeholder="Search…" autocomplete="off" spellcheck="false" />
+            <button id="project-search-clear" type="button" class="search-clear" title="Clear search" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
           <button id="project-sort" type="button" title="Sort projects">Recent</button>
         </div>
         <div id="project-nav"></div>
