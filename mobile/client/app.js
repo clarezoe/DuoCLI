@@ -1,4 +1,4 @@
-// DuoCLI Mobile PWA - 客户端逻辑 (xterm.js + WebSocket)
+// Posse Mobile PWA - 客户端逻辑 (xterm.js + WebSocket)
 
 const API = location.origin;
 

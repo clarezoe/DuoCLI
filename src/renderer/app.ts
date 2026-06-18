@@ -4045,7 +4045,7 @@ if (remoteInfoToggleEl && remoteInfoBodyEl) {
 // GitHub link
 document.getElementById('footer-github')!.addEventListener('click', (e) => {
   e.preventDefault();
-  window.posse.openUrl('https://github.com/saddism/DuoCLI');
+  window.posse.openUrl('https://github.com/Fei2-Labs/posse');
 });
 
 const appBuildEl = document.getElementById('app-build');

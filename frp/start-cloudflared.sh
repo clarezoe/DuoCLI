@@ -1,6 +1,6 @@
 #!/bin/bash
-# Cloudflare Tunnel 启动脚本 - DuoCLI
-# 将本地 DuoCLI (端口 9800) 穿透到你本机私有配置中的域名
+# Cloudflare Tunnel 启动脚本 - Posse
+# 将本地 Posse (端口 9800) 穿透到你本机私有配置中的域名
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -28,11 +28,11 @@ if grep -q "YOUR_TUNNEL_NAME\\|YOUR_TUNNEL_ID\\|/ABSOLUTE/PATH/TO/\\|duocli.exam
     exit 1
 fi
 
-# 检查 DuoCLI 是否已启动（端口 9800）
-echo "正在检查 DuoCLI 服务状态..."
+# 检查 Posse 是否已启动（端口 9800）
+echo "正在检查 Posse 服务状态..."
 if ! lsof -i :9800 > /dev/null 2>&1; then
-    echo "⚠️  警告：DuoCLI 服务（端口 9800）未启动！"
-    echo "请先启动 DuoCLI 桌面应用，然后再运行此脚本。"
+    echo "⚠️  警告：Posse 服务（端口 9800）未启动！"
+    echo "请先启动 Posse 桌面应用，然后再运行此脚本。"
     echo ""
     read -p "是否仍要继续启动 Cloudflare Tunnel？(y/N) " -n 1 -r
     echo

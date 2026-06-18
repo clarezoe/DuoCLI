@@ -17,8 +17,8 @@
 
 ## 快速开始
 
-### 1. 启动 DuoCLI
-先确保 DuoCLI 桌面应用已启动，它会自动在 `http://localhost:9800` 启动服务。
+### 1. 启动 Posse
+先确保 Posse 桌面应用已启动，它会自动在 `http://localhost:9800` 启动服务。
 
 ### 2. 启动 Cloudflare Tunnel
 
@@ -56,7 +56,7 @@ https://<your-domain>
 双击桌面上的 `DuoCLI一键启动.command`，会依次启动：
 1. cc-connect
 2. Cloudflare Tunnel
-3. DuoCLI 桌面应用
+3. Posse 桌面应用
 
 ## 脚本说明
 
@@ -137,7 +137,7 @@ launchctl load ~/Library/LaunchAgents/com.duocli.cloudflared.plist
 
 ### 2. 手机无法访问
 - 确认 Tunnel 正在运行：`./status-cloudflared.sh`
-- 确认 DuoCLI 本地服务已启动（端口 9800）
+- 确认 Posse 本地服务已启动（端口 9800）
 - 尝试 `curl https://<your-domain>` 测试
 
 ### 3. 重新登录 Cloudflare

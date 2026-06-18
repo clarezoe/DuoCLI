@@ -178,7 +178,7 @@ Click "Scan and Test" to auto-detect and verify, then pick one that works.
 
 ### Download directly
 
-Go to [Releases](https://github.com/saddism/Posse/releases) to download an installer:
+Go to [Releases](https://github.com/Fei2-Labs/posse/releases) to download an installer:
 
 - **macOS** — a `.dmg` file; open it and drag into Applications. If you see "cannot verify developer" on first launch, right-click the app → Open
 - **Windows** — an `.exe` installer; double-click to install. If SmartScreen warns you, click "More info" → "Run anyway"
@@ -186,8 +186,8 @@ Go to [Releases](https://github.com/saddism/Posse/releases) to download an insta
 ### Build from source
 
 ```bash
-git clone https://github.com/saddism/Posse.git
-cd Posse
+git clone https://github.com/Fei2-Labs/posse.git
+cd posse
 npm install
 npm run rebuild
 npm start
@@ -219,6 +219,6 @@ Everyone says Claude Code is great, and I think so too. But great is great, and 
 
 If you also use multiple AI coding tools at once, or have been tormented by the terminal's various user-hostile experiences, give Posse a try.
 
-**GitHub:** https://github.com/saddism/Posse
+**GitHub:** https://github.com/Fei2-Labs/posse
 
 If you find it useful, give it a Star. It's free anyway.

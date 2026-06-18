@@ -44,11 +44,11 @@ fi
 
 echo ""
 echo "🔗 本地服务:"
-# 检查 DuoCLI
+# 检查 Posse
 if lsof -i :9800 > /dev/null 2>&1; then
-    echo "   ✅ DuoCLI (9800): 运行中"
+    echo "   ✅ Posse (9800): 运行中"
 else
-    echo "   ❌ DuoCLI (9800): 未启动"
+    echo "   ❌ Posse (9800): 未启动"
 fi
 
 echo ""

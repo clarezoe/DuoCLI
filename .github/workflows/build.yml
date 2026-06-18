@@ -67,7 +67,7 @@ jobs:
             artifacts/mac/*.dmg
             artifacts/win/*.exe
           body: |
-            ## DuoCLI — 在手机上用 Claude Code
+            ## Posse — 在手机上用 Claude Code
 
             手机电脑实时同步的 AI 编程终端。连上同一个 WiFi，手机和电脑共享同一个终端会话，双向实时同步。
 
