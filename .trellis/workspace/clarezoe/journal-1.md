@@ -79,3 +79,36 @@ Rebrand DuoCLI->Posse + English-only. Built Conductor/Codex-style Projects navig
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Session status dots + resumed-UUID title fix
+
+**Date**: 2026-06-18
+**Task**: Session status dots + resumed-UUID title fix
+**Branch**: `main`
+
+### Summary
+
+Renderer session-status dots: working=amber+pulse, waiting-for-decision=red warning triangle, unread=green, idle=slate, history/closed=grey. Fixed resumed Codex/Claude sessions showing raw UUID as title (isMeaningfulTitle rejects UUID shape). Also shipped earlier in-session: Claude/Codex rename propagation into agent session files, and fresh-run agent-uuid misbinding fix (snapshot pre-existing session files).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7821231` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
