@@ -1,6 +1,6 @@
-// DuoCLI Mobile - Service Worker
+// Posse Mobile - Service Worker
 
-const CACHE_NAME = 'duocli-v10';
+const CACHE_NAME = 'posse-v11';
 const ASSETS = [
   '/',
   '/index.html',
@@ -58,7 +58,7 @@ self.addEventListener('push', e => {
   try {
     const data = e.data.json();
     e.waitUntil(
-      self.registration.showNotification(data.title || 'DuoCLI', {
+      self.registration.showNotification(data.title || 'Posse', {
         body: data.body || '',
         icon: '/icon-192.png',
         badge: '/icon-192.png',

@@ -1,6 +1,6 @@
 {
-  "name": "DuoCLI",
-  "short_name": "DuoCLI",
+  "name": "Posse",
+  "short_name": "Posse",
   "description": "远程终端控制",
   "start_url": "/",
   "display": "standalone",

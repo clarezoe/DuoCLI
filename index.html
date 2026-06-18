@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Posse</title>
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*;">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- New terminal dialog -->
+  <div id="new-session-overlay" class="new-session-overlay">
+    <div id="new-session-dialog" class="new-session-dialog">
+      <div class="new-session-header">
+        <h3>New Terminal</h3>
+        <button id="new-session-close" class="new-session-close" title="Close">&times;</button>
+      </div>
+
+      <div class="new-session-body">
+        <label>Working Directory</label>
+        <div class="new-session-row">
+          <div id="cwd-wrapper">
+            <input id="cwd-input" type="text" placeholder="Enter a path or click Browse..." />
+            <button id="cwd-recent-btn" class="cwd-recent-toggle" title="Recent directories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div id="cwd-recent-dropdown" class="cwd-recent-dropdown"></div>
+          </div>
+          <button id="cwd-browse-btn" class="toolbar-btn">Browse</button>
+          <button id="cwd-open-btn" class="toolbar-icon-btn" title="Reveal in Finder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+        </div>
+
+        <label>CLI</label>
+        <div class="new-session-row">
+          <select id="preset-select" class="toolbar-select">
+            <option value="">Empty Terminal</option>
+            <option value="claude --dangerously-skip-permissions">Claude (auto)</option>
+            <option value="codex -c sandbox_mode=&quot;danger-full-access&quot; -c approval=&quot;never&quot; -c network=&quot;enabled&quot;">Codex (auto)</option>
+            <option value="copilot --allow-all --autopilot">Copilot (auto)</option>
+          </select>
+          <button id="preset-add-btn" class="toolbar-icon-btn" title="New custom CLI preset">+</button>
+          <button id="preset-manage-btn" class="toolbar-icon-btn" title="Manage custom presets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
+        </div>
+
+        <label>Color Scheme</label>
+        <div class="new-session-row">
+          <div id="theme-select" class="custom-select">
+            <div class="custom-select-display" id="theme-display">
+              <span class="theme-dot" style="background:#0078d4"></span>VS Code Dark
+            </div>
+            <div class="custom-select-dropdown" id="theme-dropdown">
+              <div class="custom-select-option" data-value="auto"><span class="theme-dot" style="background:conic-gradient(#e06c75,#e5c07b,#98c379,#56b6c2,#61afef,#c678dd,#e06c75)"></span>Auto Color</div>
+              <div class="custom-select-option" data-value="vscode-dark"><span class="theme-dot" style="background:#0078d4"></span>VS Code Dark</div>
+              <div class="custom-select-option" data-value="monokai"><span class="theme-dot" style="background:#a6e22e"></span>Monokai</div>
+              <div class="custom-select-option" data-value="dracula"><span class="theme-dot" style="background:#bd93f9"></span>Dracula</div>
+              <div class="custom-select-option" data-value="solarized-dark"><span class="theme-dot" style="background:#268bd2"></span>Solarized Dark</div>
+              <div class="custom-select-option" data-value="one-dark"><span class="theme-dot" style="background:#61afef"></span>One Dark</div>
+              <div class="custom-select-option" data-value="nord"><span class="theme-dot" style="background:#88c0d0"></span>Nord</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="confirm-buttons">
+        <button id="new-session-cancel" class="btn-cancel">Cancel</button>
+        <button id="new-session-create" class="toolbar-btn">Create Terminal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loop config dialog -->
+  <div id="auto-continue-overlay" class="new-session-overlay">
+    <div class="new-session-dialog" style="width: min(400px, calc(100vw - 40px));">
+      <div class="new-session-header">
+        <h3>Loop Settings</h3>
+        <button id="auto-continue-dialog-close" class="new-session-close" title="Close">&times;</button>
+      </div>
+      <div class="new-session-body">
+        <label>Command list (one per line, sent in order)</label>
+        <textarea id="auto-continue-message" rows="4" placeholder="One command per line, sent in order" style="width:100%;resize:vertical;padding:6px 8px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-size:12px;outline:none;font-family:inherit;"></textarea>
+        <label>Loop interval (minutes)</label>
+        <input id="auto-continue-interval" type="number" min="1" placeholder="minutes" />
+        <label>Command interval (seconds)</label>
+        <input id="auto-continue-command-interval" type="number" min="0" value="2" placeholder="seconds" />
+        <div style="margin-top: 8px;">
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <input id="auto-continue-auto-agree" type="checkbox" checked />
+            Enable auto-approve (auto-confirm permission prompts)
+          </label>
+        </div>
+        <div id="auto-agree-delay-row" style="margin-top: 6px;">
+          <label>Auto-approve delay (seconds)</label>
+          <input id="auto-continue-agree-delay" type="number" min="0" value="5" placeholder="seconds" />
+        </div>
+        <div style="margin-top: 8px;">
+          <label>Send delay (seconds)<span style="font-size:10px;color:#888;">— how long to wait after typing before sending Enter</span></label>
+          <input id="auto-continue-send-delay" type="number" min="0" value="2" placeholder="seconds" />
+        </div>
+        <div style="margin-top: 8px;">
+          <label>Max duration (minutes)<span style="font-size:10px;color:#888;">— auto-stop the loop after this time; 0 means no limit</span></label>
+          <input id="auto-continue-max-duration" type="number" min="0" value="0" placeholder="minutes (0=no limit)" />
+        </div>
+      </div>
+      <div class="confirm-buttons" style="margin-top: 12px;">
+        <button id="auto-continue-cancel" class="btn-cancel">Cancel</button>
+        <button id="auto-continue-stop" class="btn-close-confirm" style="display:none;">Stop Loop</button>
+        <button id="auto-continue-save" class="toolbar-btn">Save and Start</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main body -->
+  <div id="main">
+    <!-- Left sidebar collapse button -->
+    <div id="sidebar-toggle" class="panel-toggle" title="Collapse/expand session list">&#9664;</div>
+
+    <div id="sidebar">
+      <div id="sidebar-topbar">
+        <button id="toolbar-terminal-client-btn" class="topbar-icon-btn" title="Open standalone terminal window">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+        </button>
+        <button id="toolbar-restart-daemon-btn" class="topbar-icon-btn" title="Restart the background terminal daemon (live sessions are saved as resumable)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+        <select id="app-theme-select" class="topbar-theme-select" title="App color theme — pick by mood"></select>
+      </div>
+      <!-- Remote server connection info -->
+      <div id="remote-server-info" class="remote-server-info" style="display: none;">
+        <div class="remote-info-title">Mobile Access</div>
+        <div class="remote-info-qr"><img class="remote-info-qr-img" alt="Scan to connect" /></div>
+        <div class="remote-info-scan-hint">Scan with your phone to connect</div>
+        <div class="remote-info-url" title="Tap to copy"></div>
+        <div class="remote-info-lan"></div>
+        <div class="remote-info-token"></div>
+        <div class="remote-info-setup-hint"></div>
+      </div>
+      <!-- Sessions Tab: Codex-style project navigator -->
+      <div id="tab-sessions" class="tab-content active">
+        <div id="project-toolbar">
+          <input id="project-search" type="text" placeholder="Search…" autocomplete="off" spellcheck="false" />
+          <button id="project-sort" type="button" title="Sort projects">Recent</button>
+        </div>
+        <div id="project-nav"></div>
+      </div>
+
+      <!-- Footer / copyright -->
+      <div id="sidebar-footer">
+        <div class="footer-line">Posse — your AI agent terminal command center</div>
+        <div class="footer-line footer-tagline">Your AI coding posse</div>
+        <div class="footer-line"><a id="footer-github" href="#">GitHub</a></div>
+        <div class="footer-line footer-version">Version <span id="app-version">v?</span></div>
+        <div class="footer-line footer-build" id="app-build" title="git short SHA (* = uncommitted changes) · build time"></div>
+      </div>
+    </div>
+
+    <!-- Sidebar resizer (between sessions sidebar and terminal) -->
+    <div id="sidebar-resizer" class="resizer"></div>
+
+    <div id="terminal-area">
+      <div id="terminal-content">
+        <div id="empty-state">Select a working directory, then click "New Terminal" to start</div>
+      </div>
+      <!-- File preview panel (read-only, overlays the terminal) -->
+      <div id="file-preview-panel" hidden>
+        <div id="file-preview-header">
+          <span id="file-preview-name" class="file-preview-name">File Preview</span>
+          <span id="file-preview-meta" class="file-preview-meta"></span>
+          <button id="file-preview-external" class="toolbar-icon-btn" title="Open in external editor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+          <button id="file-preview-close" class="toolbar-icon-btn" title="Close preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div id="file-preview-body"></div>
+      </div>
+      <div id="chat-content" style="display:none;">
+        <div id="chat-empty-state" class="chat-empty-state">
+          <p>Select a chat session or click "New Chat" to start</p>
+        </div>
+      </div>
+      <div id="file-statusbar">
+        <span id="file-statusbar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+        <div id="file-statusbar-files">
+          <span class="file-statusbar-placeholder">Waiting for file changes...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- File-tree resizer (between terminal and right file tree) -->
+    <div id="file-tree-resizer" class="resizer"></div>
+
+    <div id="file-tree-panel">
+      <div id="file-tree-header">
+        <span id="file-tree-path">Directory</span>
+        <button id="file-tree-refresh-btn" class="toolbar-icon-btn" title="Refresh directory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      </div>
+      <div id="file-tree-list">
+        <div class="file-tree-empty">Select a session to show the current directory</div>
+      </div>
+    </div>
+
+    <!-- Right file-tree collapse button -->
+    <div id="file-tree-toggle" class="panel-toggle" title="Collapse/expand file tree">&#9654;</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
