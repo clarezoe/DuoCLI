@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { getDisplayName, rotateDevinInstallationId, writeClaudeSessionTitle, writeCodexSessionTitle } from './pty-manager';
 import { PtyBackend } from './pty-backend';
 import { PtyDaemonClient } from './pty-daemon-client';
+import { ConnectionRegistry, LOCAL_CONNECTION_ID } from './connection-registry';
 import { loadOrCreatePtyDaemonConfig } from './pty-daemon-config';
 import { AIConfigManager } from './ai-config';
 import { startRemoteServer, setAppVersionProvider, pushRawDataToRemote, sendRemotePush, addRemoteRecentCwd, getTailscaleInfo, type RemoteConnectionStatus } from './remote-server';
@@ -568,7 +569,29 @@ function parseShellExports(content: string): Map<string, string> {
 }
 
 let mainWindow: BrowserWindow | null = null;
-let ptyManager: PtyBackend;
+
+// Connection registry — the seam for multi-host. Holds connections keyed by id
+// (only 'local' today) and tracks the active one. Populated in setupPtyManager()
+// before anything reads from it (setupPtyManager is awaited at app startup).
+const connectionRegistry = new ConnectionRegistry();
+
+// SEAM: window <-> connection binding. Today there is exactly one window and one
+// connection ('local'), so the window's bound connection id is always 'local'.
+// A later chunk will replace this single id with a BrowserWindow -> connection-id
+// map so each window can bind to a different host, and route activeBackend()
+// through the focused window's bound connection.
+// TODO(remote): map BrowserWindow -> connection id; per-window host binding.
+let activeConnectionId: string = LOCAL_CONNECTION_ID;
+
+/**
+ * The PtyBackend of the active connection. Resolves from the registry every call
+ * so it always reflects the current binding. Replaces the former global
+ * `ptyManager` binding — same value today (the local backend), routed through
+ * the registry so a future chunk can swap in a remote connection.
+ */
+function activeBackend(): PtyBackend {
+  return connectionRegistry.get(activeConnectionId)?.backend ?? connectionRegistry.getActive().backend;
+}
 const aiConfigManager = new AIConfigManager();
 let cloudflaredManager: CloudflaredManager | null = null;
 let chatSessionManager: ChatSessionManager | null = null;
@@ -787,7 +810,7 @@ function maybeNotifyAttention(id: string, data: string): void {
   const lastInputAt = sessionLastInputAt.get(id) || 0;
   const waitedLongEnough = now - lastInputAt >= WAITING_INPUT_DELAY_MS;
 
-  const session = ptyManager.getSession(id);
+  const session = activeBackend().getSession(id);
   const title = session?.title || session?.presetCommand || 'Terminal';
 
   if (hasPrompt && needDecision) {
@@ -809,7 +832,7 @@ function maybeNotifyAttention(id: string, data: string): void {
 }
 
 async function setupPtyManager(): Promise<void> {
-  ptyManager = await PtyDaemonClient.connect({
+  const localBackend = await PtyDaemonClient.connect({
     onData: (id, data) => {
       safeSend('pty:data', id, data);
       maybeNotifyAttention(id, data);
@@ -822,7 +845,7 @@ async function setupPtyManager(): Promise<void> {
     },
     onExit: (id, exitedSession) => {
       // Save sessions that have a resume ID to the closed list
-      const session = exitedSession || ptyManager.getSession(id);
+      const session = exitedSession || activeBackend().getSession(id);
       if (session?.resumeId) {
         addClosedSession({
           title: session.title,
@@ -854,6 +877,17 @@ async function setupPtyManager(): Promise<void> {
       safeSend('pty:auto-switch-status', id, status, detail);
     },
   });
+
+  // Register the local connection and make it active. This is the only
+  // connection today; remote connections will be registered by a later chunk.
+  connectionRegistry.register({
+    id: LOCAL_CONNECTION_ID,
+    label: 'Local',
+    kind: 'local',
+    backend: localBackend,
+  });
+  connectionRegistry.setActive(LOCAL_CONNECTION_ID);
+  activeConnectionId = LOCAL_CONNECTION_ID;
 }
 
 
@@ -1288,7 +1322,7 @@ function registerIPC(): void {
 
   // Create terminal
   ipcMain.handle('pty:create', async (_e, cwd: string, presetCommand: string, themeId: string, providerEnv?: Record<string, string>) => {
-    const session = await ptyManager.create(cwd, presetCommand, themeId, providerEnv);
+    const session = await activeBackend().create(cwd, presetCommand, themeId, providerEnv);
     // If providerEnv is present, infer the provider name from baseUrl
     let provider: string | null = null;
     if (providerEnv && providerEnv.ANTHROPIC_BASE_URL) {
@@ -1309,7 +1343,7 @@ function registerIPC(): void {
     } else {
       provider = getCliProvider(presetCommand);
     }
-    await ptyManager.setProvider(session.id, provider);
+    await activeBackend().setProvider(session.id, provider);
     return {
       id: session.id,
       title: session.title,
@@ -1324,21 +1358,21 @@ function registerIPC(): void {
   // Write data
   ipcMain.handle('pty:write', async (_e, id: string, data: string) => {
     console.log(`[Main] pty:write received, id=${id}, data="${data}"`);
-    await ptyManager.write(id, data);
+    await activeBackend().write(id, data);
     return true;
   });
 
   // Resize
   ipcMain.handle('pty:resize', async (_e, id: string, cols: number, rows: number) => {
-    await ptyManager.resize(id, cols, rows, 'local');
+    await activeBackend().resize(id, cols, rows, 'local');
     return true;
   });
 
   // Destroy terminal
   ipcMain.on('pty:destroy', async (_e, id: string) => {
     // Fallback: extract the resume ID from the buffer and save to the closed list
-    await ptyManager.captureResumeFromBuffer(id);
-    const session = ptyManager.getSession(id);
+    await activeBackend().captureResumeFromBuffer(id);
+    const session = activeBackend().getSession(id);
     if (session?.resumeId) {
       addClosedSession({
         title: session.title,
@@ -1350,7 +1384,7 @@ function registerIPC(): void {
     }
 
     sessionUserClosed.add(id);
-    await ptyManager.destroy(id);
+    await activeBackend().destroy(id);
     sessionOutputTail.delete(id);
     sessionLastInputAt.delete(id);
     sessionArmedForNotify.delete(id);
@@ -1360,19 +1394,19 @@ function registerIPC(): void {
 
   // Rename terminal
   ipcMain.on('pty:rename', (_e, id: string, title: string) => {
-    ptyManager.rename(id, title).catch((error) => {
+    activeBackend().rename(id, title).catch((error) => {
       console.error('[Main] Failed to rename PTY session:', error);
     });
   });
 
   // Regenerate title with AI
   ipcMain.handle('pty:regenerate-title', async (_e, id: string) => {
-    await ptyManager.regenerateTitle(id);
+    await activeBackend().regenerateTitle(id);
   });
 
   // Get info for all sessions
   ipcMain.handle('pty:sessions', async () => {
-    const sessions = await ptyManager.refreshSessions();
+    const sessions = await activeBackend().refreshSessions();
     return sessions.map((s) => ({
       id: s.id,
       title: s.title,
@@ -1391,14 +1425,14 @@ function registerIPC(): void {
   ipcMain.handle('daemon:restart', async (): Promise<{ ok: boolean; error?: string }> => {
     try {
       // 1. Persist every live session as resumable before stopping the daemon.
-      const liveSessions = ptyManager.getAllSessions();
+      const liveSessions = activeBackend().getAllSessions();
       for (const live of liveSessions) {
         try {
-          await ptyManager.captureResumeFromBuffer(live.id);
+          await activeBackend().captureResumeFromBuffer(live.id);
         } catch {
           // Best-effort: keep going even if one capture fails.
         }
-        const session = ptyManager.getSession(live.id) || live;
+        const session = activeBackend().getSession(live.id) || live;
         // Persist EVERY live session, even without a captured resumeId. Entries
         // without a resume id are re-opened as a fresh terminal in the original
         // cwd running the original command (handled in restoreClosedSession).
@@ -1412,7 +1446,7 @@ function registerIPC(): void {
       }
 
       // 2-3. Stop the old daemon and start a fresh one, reconnecting events.
-      await ptyManager.restart();
+      await activeBackend().restart();
 
       // 5. Tell the renderer the live list is now empty so it refreshes.
       safeSend('daemon:restarted');
@@ -2300,7 +2334,8 @@ app.whenReady().then(async () => {
 
   // Start the remote-access server (mobile)
   setAppVersionProvider(() => app.getVersion());
-  startRemoteServer(ptyManager, (sessionInfo) => {
+  // The mobile remote-server always serves the LOCAL connection's sessions.
+  startRemoteServer(connectionRegistry.local().backend, (sessionInfo) => {
     // The mobile client created a session; notify the desktop renderer to refresh
     safeSend('pty:remote-created', sessionInfo);
   }, (id) => {
