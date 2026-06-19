@@ -6,6 +6,7 @@ import { getDisplayName, rotateDevinInstallationId, writeClaudeSessionTitle, wri
 import { PtyBackend } from './pty-backend';
 import { PtyDaemonClient } from './pty-daemon-client';
 import { ConnectionRegistry, LOCAL_CONNECTION_ID } from './connection-registry';
+import { RemoteServerBackend } from './remote-server-backend';
 import { loadOrCreatePtyDaemonConfig } from './pty-daemon-config';
 import { AIConfigManager } from './ai-config';
 import { startRemoteServer, setAppVersionProvider, pushRawDataToRemote, sendRemotePush, addRemoteRecentCwd, getTailscaleInfo, type RemoteConnectionStatus } from './remote-server';
@@ -831,19 +832,34 @@ function maybeNotifyAttention(id: string, data: string): void {
   sessionArmedForNotify.delete(id);
 }
 
-async function setupPtyManager(): Promise<void> {
-  const localBackend = await PtyDaemonClient.connect({
+/**
+ * Build the PtyBackendEvents for a given connection. EVERY renderer-bound callback is guarded
+ * by `connId === activeConnectionId` so only the ACTIVE connection drives the single renderer
+ * window. Non-active connections keep running (24/7 remotes) but stay silent — their `pty:data`
+ * / title / exit / auto-switch frames are dropped at the source, so local + remote `term-N` ids
+ * never interleave or collide in the renderer. Switching active + refreshing surfaces that
+ * connection's sessions. `onRawData` (mobile push) is NOT guarded for the local connection so
+ * the mobile relay keeps streaming regardless of which host the desktop is viewing.
+ */
+function buildConnectionEvents(connId: string): import('./pty-backend').PtyBackendEvents {
+  const isActive = () => connId === activeConnectionId;
+  return {
     onData: (id, data) => {
-      safeSend('pty:data', id, data);
-      maybeNotifyAttention(id, data);
+      if (isActive()) {
+        safeSend('pty:data', id, data);
+        maybeNotifyAttention(id, data);
+      }
     },
     onRawData: (id, data) => {
-      pushRawDataToRemote(id, data);
+      // The mobile relay mirrors the LOCAL backend's raw output regardless of the desktop's
+      // active connection. Remote connections have no separate relay, so only push for local.
+      if (connId === LOCAL_CONNECTION_ID) pushRawDataToRemote(id, data);
     },
     onTitleUpdate: (id, title) => {
-      safeSend('pty:title-update', id, title);
+      if (isActive()) safeSend('pty:title-update', id, title);
     },
     onExit: (id, exitedSession) => {
+      if (!isActive()) return;
       // Save sessions that have a resume ID to the closed list
       const session = exitedSession || activeBackend().getSession(id);
       if (session?.resumeId) {
@@ -869,17 +885,22 @@ async function setupPtyManager(): Promise<void> {
 
       safeSend('pty:exit', id);
     },
-    onPasteInput: (id, cwd) => {
+    onPasteInput: (id, _cwd) => {
+      if (!isActive()) return;
       sessionLastInputAt.set(id, Date.now());
       sessionArmedForNotify.add(id);
     },
     onAutoSwitchStatus: (id, status, detail) => {
-      safeSend('pty:auto-switch-status', id, status, detail);
+      if (isActive()) safeSend('pty:auto-switch-status', id, status, detail);
     },
-  });
+  };
+}
 
-  // Register the local connection and make it active. This is the only
-  // connection today; remote connections will be registered by a later chunk.
+async function setupPtyManager(): Promise<void> {
+  const localBackend = await PtyDaemonClient.connect(buildConnectionEvents(LOCAL_CONNECTION_ID));
+
+  // Register the local connection and make it active. Remote connections are added on
+  // demand by addRemoteConnection() (the connections:add IPC).
   connectionRegistry.register({
     id: LOCAL_CONNECTION_ID,
     label: 'Local',
@@ -888,6 +909,56 @@ async function setupPtyManager(): Promise<void> {
   });
   connectionRegistry.setActive(LOCAL_CONNECTION_ID);
   activeConnectionId = LOCAL_CONNECTION_ID;
+}
+
+/** Stable connection id for a remote host derived from its base URL. */
+function remoteConnectionId(baseUrl: string): string {
+  const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '').replace(/[^a-zA-Z0-9.:_-]/g, '_');
+  return `remote:${host}`;
+}
+
+/**
+ * Connect to a remote Posse backend and register it as a connection. The remote keeps running
+ * 24/7 independent of this client; this only attaches a viewer. Returns the new connection id.
+ */
+async function addRemoteConnection(opts: { label: string; baseUrl: string; token: string }): Promise<{ id: string; label: string }> {
+  const baseUrl = String(opts.baseUrl || '').trim().replace(/\/+$/, '');
+  const token = String(opts.token || '').trim();
+  if (!baseUrl) throw new Error('Base URL is required');
+  if (!token) throw new Error('Token is required');
+  const id = remoteConnectionId(baseUrl);
+  // If this host is already registered, dispose the old client and replace it (re-pair).
+  const existing = connectionRegistry.get(id);
+  if (existing && existing.kind === 'remote') {
+    try { (existing.backend as RemoteServerBackend).dispose?.(); } catch { /* ignore */ }
+    connectionRegistry.unregister(id);
+  }
+  const label = String(opts.label || '').trim() || baseUrl.replace(/^https?:\/\//, '');
+  const backend = await RemoteServerBackend.connect({ baseUrl, token, events: buildConnectionEvents(id) });
+  connectionRegistry.register({ id, label, kind: 'remote', backend });
+  return { id, label };
+}
+
+/** Switch the active connection and tell the renderer to refresh its navigator/file tree. */
+function setActiveConnection(id: string): void {
+  connectionRegistry.setActive(id);
+  activeConnectionId = id;
+  safeSend('connection:changed', id);
+}
+
+/** Remove a remote connection (never 'local'); disposes its client. The remote keeps running. */
+function removeConnection(id: string): void {
+  if (id === LOCAL_CONNECTION_ID) return;
+  const removed = connectionRegistry.unregister(id);
+  if (removed) {
+    try { (removed.backend as RemoteServerBackend).dispose?.(); } catch { /* ignore */ }
+  }
+  // unregister() falls active back to local when needed; reflect that.
+  const active = connectionRegistry.getActiveId() ?? LOCAL_CONNECTION_ID;
+  if (active !== activeConnectionId) {
+    activeConnectionId = active;
+    safeSend('connection:changed', active);
+  }
 }
 
 
@@ -1314,6 +1385,93 @@ function buildProjectsList(extraFolders: string[] = []): ProjectEntry[] {
 }
 
 
+/**
+ * The active connection's backend IFF it is a remote one, else null. Lets navigator/file IPC
+ * branch "remote vs local fs" without leaking the registry into every handler.
+ */
+function activeRemoteBackend(): RemoteServerBackend | null {
+  const conn = connectionRegistry.get(activeConnectionId);
+  if (conn && conn.kind === 'remote') return conn.backend as RemoteServerBackend;
+  return null;
+}
+
+/**
+ * Shape a remote backend's live + resumable sessions into the SAME ProjectEntry[] the local
+ * `projects:list` returns. Live sessions bucket by their reported cwd (matching local grouping);
+ * resumable sessions bucket by their own cwd. Sessions with no cwd fall under one "<label>"
+ * node so they stay visible + clickable (acceptable MVP per the task).
+ */
+async function buildRemoteProjectsList(remote: RemoteServerBackend): Promise<ProjectEntry[]> {
+  const conn = connectionRegistry.get(activeConnectionId);
+  const label = conn?.label || 'Remote';
+  const FALLBACK_KEY = `__remote_${activeConnectionId}__`;
+
+  const buckets = new Map<string, { path: string; name: string; agentMap: Map<ProjectsAgentId, ProjectSession[]> }>();
+  const getBucket = (key: string, displayPath: string, name: string) => {
+    let b = buckets.get(key);
+    if (!b) { b = { path: displayPath, name, agentMap: new Map() }; buckets.set(key, b); }
+    return b;
+  };
+  const normAgent = (a: string): ProjectsAgentId => {
+    const v = (a || '').toLowerCase();
+    return v === 'codex' || v === 'kiro' || v === 'copilot' ? (v as ProjectsAgentId) : 'claude';
+  };
+  const addSession = (cwd: string, s: ProjectSession) => {
+    let key: string; let displayPath: string; let name: string;
+    if (cwd) { key = cwd; displayPath = cwd; name = path.basename(cwd) || cwd; }
+    else { key = FALLBACK_KEY; displayPath = ''; name = label; }
+    const bucket = getBucket(key, displayPath, name);
+    let arr = bucket.agentMap.get(s.agent);
+    if (!arr) { arr = []; bucket.agentMap.set(s.agent, arr); }
+    arr.push(s);
+  };
+
+  // Live sessions (running on the remote right now).
+  try {
+    await remote.refreshSessions().catch(() => undefined);
+    for (const live of remote.getAllSessions()) {
+      addSession(live.cwd, {
+        id: live.id,
+        title: live.title || live.presetCommand || 'Session',
+        mtimeMs: live.createdAt || Date.now(),
+        resumeCommand: live.resumeCommand || '',
+        agent: normAgent(live.provider || 'claude'),
+        sourcePath: '',
+      });
+    }
+  } catch { /* ignore */ }
+
+  // Resumable history from the remote.
+  try {
+    const resumable = await remote.listResumable('');
+    for (const r of resumable) {
+      addSession(r.cwd || '', {
+        id: r.id,
+        title: r.title || 'Session',
+        mtimeMs: r.mtimeMs || Date.now(),
+        resumeCommand: r.resumeCommand || '',
+        agent: normAgent(r.agent),
+        sourcePath: '',
+      });
+    }
+  } catch { /* ignore */ }
+
+  const projects: ProjectEntry[] = [];
+  for (const b of buckets.values()) {
+    const agents: ProjectEntry['agents'] = [];
+    let lastActiveMs = 0;
+    for (const [agent, sessions] of b.agentMap) {
+      sessions.sort((a, b2) => b2.mtimeMs - a.mtimeMs);
+      const capped = sessions.slice(0, PROJECTS_MAX_SESSIONS_PER_AGENT);
+      if (capped.length > 0) lastActiveMs = Math.max(lastActiveMs, capped[0].mtimeMs);
+      agents.push({ agent, sessions: capped });
+    }
+    projects.push({ path: b.path, name: b.name, agents, lastActiveMs });
+  }
+  projects.sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+  return projects;
+}
+
 function registerIPC(): void {
   // Set window title
   ipcMain.on('window:set-title', (_e, title: string) => {
@@ -1536,7 +1694,11 @@ function registerIPC(): void {
   });
 
   // Read directory (left-side file tree)
-  ipcMain.handle('file-tree:list-dir', (_e, dirPath: string) => {
+  ipcMain.handle('file-tree:list-dir', async (_e, dirPath: string) => {
+    const remote = activeRemoteBackend();
+    if (remote) {
+      try { return await remote.fsList(String(dirPath || '')); } catch { return []; }
+    }
     try {
       const abs = path.resolve(String(dirPath || ''));
       const st = fs.statSync(abs);
@@ -1578,7 +1740,9 @@ function registerIPC(): void {
   });
 
   // Read file contents for the right-side preview panel (read-only, with size/binary guards)
-  ipcMain.handle('fs:read-file', (_e, filePath: string) => {
+  ipcMain.handle('fs:read-file', async (_e, filePath: string) => {
+    const remote = activeRemoteBackend();
+    if (remote) return remote.fsRead(String(filePath || ''));
     const MAX_PREVIEW_BYTES = 1024 * 1024; // 1MB cap to avoid lag
     try {
       const abs = path.resolve(String(filePath || ''));
@@ -1605,7 +1769,13 @@ function registerIPC(): void {
   });
 
   // Write a text file (utf8) for the in-app editable preview. Never throws across IPC.
-  ipcMain.handle('fs:write-file', (_e, filePath: string, content: string) => {
+  ipcMain.handle('fs:write-file', async (_e, filePath: string, content: string) => {
+    const remote = activeRemoteBackend();
+    if (remote) {
+      if (typeof filePath !== 'string' || filePath.trim() === '') return { ok: false, error: 'invalid-path' };
+      if (typeof content !== 'string') return { ok: false, error: 'invalid-content' };
+      return remote.fsWrite(filePath, content);
+    }
     try {
       if (typeof filePath !== 'string' || filePath.trim() === '') {
         return { ok: false, error: 'invalid-path' };
@@ -1622,7 +1792,9 @@ function registerIPC(): void {
   });
 
   // Read a file as a base64 data URL (for image previews). Never throws.
-  ipcMain.handle('fs:read-file-base64', (_e, filePath: string) => {
+  ipcMain.handle('fs:read-file-base64', async (_e, filePath: string) => {
+    const remote = activeRemoteBackend();
+    if (remote) return remote.fsReadBase64(String(filePath || ''));
     const MAX_IMAGE_BYTES = 16 * 1024 * 1024; // 16MB cap
     try {
       const abs = path.resolve(String(filePath || ''));
@@ -1703,9 +1875,14 @@ function registerIPC(): void {
     }
   });
 
-  // Projects-first discovery: bucket every AI-CLI session by project folder
-  ipcMain.handle('projects:list', (_e, opts?: { extraFolders?: string[] }) => {
+  // Projects-first discovery: bucket every AI-CLI session by project folder.
+  // LOCAL active connection -> scan local AI-CLI stores (unchanged). REMOTE active connection ->
+  // fetch the remote's live + resumable sessions and shape them into the same ProjectEntry[] so
+  // the renderer's navigator renders them unchanged (see buildRemoteProjectsList()).
+  ipcMain.handle('projects:list', async (_e, opts?: { extraFolders?: string[] }) => {
     try {
+      const remote = activeRemoteBackend();
+      if (remote) return await buildRemoteProjectsList(remote);
       return buildProjectsList(opts?.extraFolders ?? []);
     } catch {
       return [];
@@ -1713,6 +1890,55 @@ function registerIPC(): void {
   });
 
   // Archive (soft-hide, reversible, does NOT touch agent data).
+  // ========== Connection registry (D2: add/switch remote hosts) ==========
+  // All wrapped to never throw across IPC.
+  ipcMain.handle('connections:list', () => {
+    try {
+      return connectionRegistry.list().map((c) => ({
+        id: c.id,
+        label: c.label,
+        kind: c.kind,
+        active: c.id === activeConnectionId,
+      }));
+    } catch {
+      return [{ id: LOCAL_CONNECTION_ID, label: 'Local', kind: 'local', active: true }];
+    }
+  });
+
+  ipcMain.handle('connections:add', async (_e, opts: { label?: string; baseUrl?: string; token?: string }) => {
+    try {
+      const { id, label } = await addRemoteConnection({
+        label: String(opts?.label || ''),
+        baseUrl: String(opts?.baseUrl || ''),
+        token: String(opts?.token || ''),
+      });
+      setActiveConnection(id);
+      return { ok: true, id, label };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('connections:remove', (_e, id: string) => {
+    try {
+      removeConnection(String(id || ''));
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('connections:set-active', (_e, id: string) => {
+    try {
+      const target = String(id || '');
+      if (!connectionRegistry.get(target)) return { ok: false, error: 'no-such-connection' };
+      setActiveConnection(target);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
   ipcMain.handle('session:set-archived', (_e, id: string, archived: boolean) => {
     try {
       setSessionArchived(id, !!archived);

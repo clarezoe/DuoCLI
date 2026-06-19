@@ -149,6 +149,12 @@ declare global {
       // Auto account-switch status
       onAutoSwitchStatus: (cb: (id: string, status: string, detail?: string) => void) => void;
       onCloseCurrentSession: (cb: () => void) => void;
+      // Connections (remote host add/switch)
+      connectionsList: () => Promise<Array<{ id: string; label: string; kind: 'local' | 'remote'; active: boolean }>>;
+      connectionsAdd: (opts: { label?: string; baseUrl: string; token: string }) => Promise<{ ok: boolean; id?: string; label?: string; error?: string }>;
+      connectionsRemove: (id: string) => Promise<{ ok: boolean; error?: string }>;
+      connectionsSetActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
+      onConnectionChanged: (cb: (id: string) => void) => void;
     };
   }
 }
@@ -4382,6 +4388,189 @@ sessionList.setAttribute('tabindex', '0');
 window.posse.onCloseCurrentSession(() => {
   void closeCurrentSession();
 });
+
+// ========== Host switcher (remote host add / switch) ==========
+// Minimal MVP: a topbar button shows the active connection's label; clicking opens a small
+// menu of connections (Local + remotes) with an "active" check plus an "Add remote…" item.
+// Switching active makes the main process re-route projects:list / file IPC to that host;
+// connection:changed then refreshes the navigator + file tree so the sidebar reflects it.
+const hostSwitcherBtn = document.getElementById('host-switcher-btn');
+const hostSwitcherLabel = document.getElementById('host-switcher-label');
+
+async function refreshHostSwitcherLabel(): Promise<void> {
+  if (!hostSwitcherLabel) return;
+  try {
+    const list = await window.posse.connectionsList();
+    const active = list.find((c) => c.active) || list[0];
+    hostSwitcherLabel.textContent = active ? active.label : 'Local';
+  } catch {
+    hostSwitcherLabel.textContent = 'Local';
+  }
+}
+
+function closeHostMenu(): void {
+  document.getElementById('host-switcher-menu')?.remove();
+  document.removeEventListener('click', onHostMenuOutsideClick, true);
+}
+
+function onHostMenuOutsideClick(e: MouseEvent): void {
+  const menu = document.getElementById('host-switcher-menu');
+  if (menu && !menu.contains(e.target as Node) && e.target !== hostSwitcherBtn && !hostSwitcherBtn?.contains(e.target as Node)) {
+    closeHostMenu();
+  }
+}
+
+async function openHostMenu(): Promise<void> {
+  closeHostMenu();
+  if (!hostSwitcherBtn) return;
+  let list: Array<{ id: string; label: string; kind: 'local' | 'remote'; active: boolean }> = [];
+  try { list = await window.posse.connectionsList(); } catch { /* ignore */ }
+
+  const menu = document.createElement('div');
+  menu.id = 'host-switcher-menu';
+  menu.className = 'host-switcher-menu';
+  const rect = hostSwitcherBtn.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${rect.left}px`;
+
+  for (const c of list) {
+    const item = document.createElement('div');
+    item.className = 'host-switcher-item' + (c.active ? ' active' : '');
+    const check = document.createElement('span');
+    check.className = 'host-switcher-check';
+    check.textContent = c.active ? '✓' : '';
+    const name = document.createElement('span');
+    name.className = 'host-switcher-name';
+    name.textContent = c.label;
+    item.appendChild(check);
+    item.appendChild(name);
+    if (c.kind === 'remote') {
+      const rm = document.createElement('button');
+      rm.className = 'host-switcher-remove';
+      rm.title = 'Remove this host';
+      rm.textContent = '×';
+      rm.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        await window.posse.connectionsRemove(c.id);
+        await openHostMenu();
+        await refreshHostSwitcherLabel();
+      });
+      item.appendChild(rm);
+    }
+    item.addEventListener('click', async () => {
+      closeHostMenu();
+      if (c.active) return;
+      const res = await window.posse.connectionsSetActive(c.id);
+      if (!res.ok) { console.error('set-active failed', res.error); return; }
+      await refreshHostSwitcherLabel();
+    });
+    menu.appendChild(item);
+  }
+
+  const addItem = document.createElement('div');
+  addItem.className = 'host-switcher-item host-switcher-add';
+  addItem.innerHTML = '<span class="host-switcher-check">+</span><span class="host-switcher-name">Add remote…</span>';
+  addItem.addEventListener('click', () => {
+    closeHostMenu();
+    void openAddRemoteDialog();
+  });
+  menu.appendChild(addItem);
+
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', onHostMenuOutsideClick, true), 0);
+}
+
+function openAddRemoteDialog(): Promise<void> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `
+      <h3>Add Remote Host</h3>
+      <div class="preset-form">
+        <div class="preset-form-field">
+          <label>Label</label>
+          <input type="text" id="remote-label-input" placeholder="e.g. mymini" />
+        </div>
+        <div class="preset-form-field">
+          <label>Base URL</label>
+          <input type="text" id="remote-url-input" placeholder="http://100.x.y.z:9800" />
+        </div>
+        <div class="preset-form-field">
+          <label>Token</label>
+          <input type="text" id="remote-token-input" placeholder="remote-server access token" />
+        </div>
+        <div class="preset-form-error" id="remote-add-error" style="color:var(--danger);min-height:16px;font-size:12px"></div>
+      </div>
+      <div class="confirm-buttons" style="margin-top:16px">
+        <button class="btn-cancel">Cancel</button>
+        <button class="btn-close-confirm" style="background:var(--accent)">Connect</button>
+      </div>`;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const labelInput = dialog.querySelector('#remote-label-input') as HTMLInputElement;
+    const urlInput = dialog.querySelector('#remote-url-input') as HTMLInputElement;
+    const tokenInput = dialog.querySelector('#remote-token-input') as HTMLInputElement;
+    const errorEl = dialog.querySelector('#remote-add-error') as HTMLElement;
+    const connectBtn = dialog.querySelector('.btn-close-confirm') as HTMLButtonElement;
+    urlInput.focus();
+
+    const cleanup = () => { overlay.remove(); resolve(); };
+
+    const onConnect = async () => {
+      const baseUrl = urlInput.value.trim();
+      const token = tokenInput.value.trim();
+      if (!baseUrl || !token) {
+        urlInput.style.borderColor = baseUrl ? '' : 'var(--danger)';
+        tokenInput.style.borderColor = token ? '' : 'var(--danger)';
+        return;
+      }
+      connectBtn.disabled = true;
+      connectBtn.textContent = 'Connecting…';
+      errorEl.textContent = '';
+      const res = await window.posse.connectionsAdd({ label: labelInput.value.trim(), baseUrl, token });
+      if (!res.ok) {
+        errorEl.textContent = res.error || 'Failed to connect';
+        connectBtn.disabled = false;
+        connectBtn.textContent = 'Connect';
+        return;
+      }
+      await refreshHostSwitcherLabel();
+      cleanup();
+    };
+
+    dialog.querySelector('.btn-cancel')!.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+    connectBtn.addEventListener('click', () => { void onConnect(); });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') { void onConnect(); }
+      if (e.key === 'Escape') cleanup();
+    };
+    labelInput.addEventListener('keydown', onKey);
+    urlInput.addEventListener('keydown', onKey);
+    tokenInput.addEventListener('keydown', onKey);
+  });
+}
+
+if (hostSwitcherBtn) {
+  hostSwitcherBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (document.getElementById('host-switcher-menu')) closeHostMenu();
+    else void openHostMenu();
+  });
+}
+
+// When the active connection changes (switch / add / remove), refetch the navigator + file
+// tree so the sidebar reflects the new host's sessions and the file panel reroots.
+window.posse.onConnectionChanged(() => {
+  void refreshHostSwitcherLabel();
+  void refreshProjectsData();
+  void renderFileTree();
+});
+
+void refreshHostSwitcherLabel();
 
 // ========== Mobile Access collapse toggle ==========
 

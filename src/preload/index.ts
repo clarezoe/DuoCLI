@@ -200,4 +200,13 @@ contextBridge.exposeInMainWorld('posse', {
   // Auto account-switch status
   onAutoSwitchStatus: (cb: (id: string, status: string, detail?: string) => void) =>
     ipcRenderer.on('pty:auto-switch-status', (_e, id, status, detail) => cb(id, status, detail)),
+
+  // ========== Connections (D2: remote host add/switch) ==========
+  connectionsList: () => ipcRenderer.invoke('connections:list'),
+  connectionsAdd: (opts: { label?: string; baseUrl: string; token: string }) =>
+    ipcRenderer.invoke('connections:add', opts),
+  connectionsRemove: (id: string) => ipcRenderer.invoke('connections:remove', id),
+  connectionsSetActive: (id: string) => ipcRenderer.invoke('connections:set-active', id),
+  onConnectionChanged: (cb: (id: string) => void) =>
+    ipcRenderer.on('connection:changed', (_e, id) => cb(id)),
 });
