@@ -682,6 +682,108 @@ export function startRemoteServer(
     catch { res.json([]); }
   });
 
+  // ========== Filesystem access (REMOTE clients) ==========
+  // SECURITY: these expose filesystem read/list/write to any TOKEN-AUTHENTICATED client.
+  // They sit under `/api`, so the `authMiddleware` above already gates every request on the
+  // server token (Bearer header or ?token=). They mirror the Electron `fs:*` / `file-tree:*`
+  // IPC handlers in src/main/index.ts 1:1 (same path resolution, encoding, and size limits) so
+  // a headless backend serves files exactly like the desktop does locally. Each handler is
+  // wrapped to return a JSON error + proper HTTP status instead of crashing the server.
+
+  // List a directory's entries. Mirrors `file-tree:list-dir`.
+  app.get('/api/fs/list', (req, res) => {
+    try {
+      const dirPath = typeof req.query.path === 'string' ? req.query.path : '';
+      const abs = path.resolve(String(dirPath || ''));
+      const st = fs.statSync(abs);
+      if (!st.isDirectory()) { res.json([]); return; }
+      const names = fs.readdirSync(abs);
+      const items = names
+        .filter((name) => name !== '.DS_Store')
+        .map((name) => {
+          const fullPath = path.join(abs, name);
+          let isDir = false;
+          try { isDir = fs.statSync(fullPath).isDirectory(); } catch { /* ignore */ }
+          return { name, path: fullPath, isDir };
+        })
+        .sort((a, b) => {
+          if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+          return a.name.localeCompare(b.name, 'zh-CN');
+        })
+        .slice(0, 500);
+      res.json(items);
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Read a text file for preview (read-only, size + binary guards). Mirrors `fs:read-file`.
+  app.get('/api/fs/read', (req, res) => {
+    const MAX_PREVIEW_BYTES = 1024 * 1024; // 1MB cap to avoid lag
+    try {
+      const filePath = typeof req.query.path === 'string' ? req.query.path : '';
+      const abs = path.resolve(String(filePath || ''));
+      const st = fs.statSync(abs);
+      if (!st.isFile()) { res.status(400).json({ error: 'not-a-file' }); return; }
+      if (st.size > MAX_PREVIEW_BYTES) {
+        res.status(413).json({ error: 'too-large', size: st.size }); return;
+      }
+      const buf = fs.readFileSync(abs);
+      // Simple binary detection: treat NUL in the first 8000 bytes as binary
+      const sniff = buf.subarray(0, 8000);
+      if (sniff.includes(0)) {
+        res.status(415).json({ error: 'binary', size: st.size }); return;
+      }
+      res.json({
+        content: buf.toString('utf-8'),
+        size: st.size,
+        ext: path.extname(abs).slice(1).toLowerCase(),
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Read a file as a base64 data URL (image previews). Mirrors `fs:read-file-base64`.
+  app.get('/api/fs/read-base64', (req, res) => {
+    const MAX_IMAGE_BYTES = 16 * 1024 * 1024; // 16MB cap
+    try {
+      const filePath = typeof req.query.path === 'string' ? req.query.path : '';
+      const abs = path.resolve(String(filePath || ''));
+      const st = fs.statSync(abs);
+      if (!st.isFile()) { res.status(400).json({ error: 'not-a-file' }); return; }
+      if (st.size > MAX_IMAGE_BYTES) { res.status(413).json({ error: 'too-large', size: st.size }); return; }
+      const ext = path.extname(abs).slice(1).toLowerCase();
+      const mimeByExt: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+        svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
+      };
+      const mime = mimeByExt[ext] || 'application/octet-stream';
+      const buf = fs.readFileSync(abs);
+      res.json({ dataUrl: `data:${mime};base64,${buf.toString('base64')}`, size: st.size, ext });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Write a text file (utf8) for the in-app editable preview. Mirrors `fs:write-file`.
+  app.post('/api/fs/write', (req, res) => {
+    try {
+      const { path: filePath, content } = req.body || {};
+      if (typeof filePath !== 'string' || filePath.trim() === '') {
+        res.status(400).json({ ok: false, error: 'invalid-path' }); return;
+      }
+      if (typeof content !== 'string') {
+        res.status(400).json({ ok: false, error: 'invalid-content' }); return;
+      }
+      const abs = path.resolve(filePath);
+      fs.writeFileSync(abs, content, 'utf-8');
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: (err as Error).message });
+    }
+  });
+
   // Create a session — created via ptyManager, notifying the desktop
   app.post('/api/sessions', async (req, res) => {
     const { cwd, presetCommand, themeId, providerEnv } = req.body;
