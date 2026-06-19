@@ -354,6 +354,60 @@ export class RemoteServerBackend implements PtyBackend {
     };
   }
 
+  // ===== Navigator / filesystem proxying (D2) =====
+  // These back the desktop's `projects:list` + `file-tree:*` / `fs:*` IPC when the active
+  // connection is THIS remote. They GET/POST the remote-server's `/api/resumable` and
+  // `/api/fs/*` routes (token-authed via `request()`), returning the SAME shapes the local
+  // IPC handlers return so the renderer renders remote content unchanged.
+
+  /** Remote resumable session history (GET /api/resumable). Mirrors `listResumableSessions`. */
+  async listResumable(cwd = ''): Promise<Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: string; resumeCommand: string }>> {
+    const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+    try {
+      return await this.request<Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: string; resumeCommand: string }>>('GET', `/api/resumable${q}`);
+    } catch {
+      return [];
+    }
+  }
+
+  /** List a remote directory (GET /api/fs/list). Mirrors `file-tree:list-dir`. */
+  async fsList(dirPath: string): Promise<Array<{ name: string; path: string; isDir: boolean }>> {
+    try {
+      return await this.request<Array<{ name: string; path: string; isDir: boolean }>>('GET', `/api/fs/list?path=${encodeURIComponent(dirPath)}`);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Read a remote text file (GET /api/fs/read). Mirrors `fs:read-file`'s `{ ok, ... }` shape. */
+  async fsRead(filePath: string): Promise<{ ok: boolean; content?: string; size?: number; ext?: string; error?: string }> {
+    try {
+      const data = await this.request<{ content: string; size: number; ext: string }>('GET', `/api/fs/read?path=${encodeURIComponent(filePath)}`);
+      return { ok: true, content: data.content, size: data.size, ext: data.ext };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  /** Read a remote file as a base64 data URL (GET /api/fs/read-base64). Mirrors `fs:read-file-base64`. */
+  async fsReadBase64(filePath: string): Promise<{ ok: boolean; dataUrl?: string; size?: number; ext?: string; error?: string }> {
+    try {
+      const data = await this.request<{ dataUrl: string; size: number; ext: string }>('GET', `/api/fs/read-base64?path=${encodeURIComponent(filePath)}`);
+      return { ok: true, dataUrl: data.dataUrl, size: data.size, ext: data.ext };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
+  /** Write a remote text file (POST /api/fs/write). Mirrors `fs:write-file`. */
+  async fsWrite(filePath: string, content: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      return await this.request<{ ok: boolean; error?: string }>('POST', '/api/fs/write', { path: filePath, content });
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
   /** ws:// or wss:// origin derived from the http(s) baseUrl. */
   private wsBaseUrl(): string {
     if (this.baseUrl.startsWith('https://')) return 'wss://' + this.baseUrl.slice('https://'.length);

@@ -69,6 +69,27 @@ export class ConnectionRegistry {
     this.activeId = id;
   }
 
+  /** The id of the currently-active connection (or null before any registration). */
+  getActiveId(): string | null {
+    return this.activeId;
+  }
+
+  /**
+   * Remove a connection (e.g. a remote the user dropped). Never removes 'local'.
+   * If the removed connection was active, falls back to 'local'. Returns the removed
+   * connection so the caller can dispose its backend.
+   */
+  unregister(id: string): Connection | undefined {
+    if (id === LOCAL_CONNECTION_ID) return undefined;
+    const conn = this.connections.get(id);
+    if (!conn) return undefined;
+    this.connections.delete(id);
+    if (this.activeId === id) {
+      this.activeId = this.connections.has(LOCAL_CONNECTION_ID) ? LOCAL_CONNECTION_ID : (this.connections.keys().next().value ?? null);
+    }
+    return conn;
+  }
+
   /** The always-present local connection. */
   local(): Connection {
     const conn = this.connections.get(LOCAL_CONNECTION_ID);
