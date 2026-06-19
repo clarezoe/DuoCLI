@@ -1,6 +1,11 @@
 import { TerminalManager } from './terminal-manager';
 import { ChatView } from './chat-view';
-import { createFilePreview, type FilePreview } from './file-preview';
+import { createFilePreview, isPreviewableExt, type FilePreview } from './file-preview';
+
+// Image extensions handled by the inline preview.
+function isImageExt(ext: string): boolean {
+  return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].includes(ext.toLowerCase());
+}
 import QRCode from 'qrcode';
 
 let remoteServerInfo: { lanUrl: string; token: string; port: number; publicUrl?: string; tunnel?: { running: boolean; url: string; message?: string }; tailscaleUrl?: string | null } | null = null;
@@ -49,6 +54,7 @@ declare global {
       fileTreeListDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDir: boolean }>>;
       fileTreeTrash: (p: string) => Promise<{ ok: boolean; error?: string }>;
       readFile: (filePath: string) => Promise<{ ok: boolean; content?: string; size?: number; ext?: string; error?: string }>;
+      readFileBase64: (filePath: string) => Promise<{ ok: boolean; dataUrl?: string; size?: number; ext?: string; error?: string }>;
       claudeSessionsList: (cwd: string) => Promise<Array<{ id: string; title: string; cwd: string; mtimeMs: number; agent: 'claude' | 'codex'; resumeCommand: string }>>;
       projectsList: (extra?: { extraFolders?: string[] }) => Promise<Array<{
         path: string;
@@ -1398,6 +1404,33 @@ function closeFilePreview(): void {
 }
 
 async function openFilePreview(filePath: string, name: string): Promise<void> {
+  const ext = (filePath.split('.').pop() || '').toLowerCase();
+
+  // Images → read as a base64 data URL and show inline.
+  if (isImageExt(ext)) {
+    let img: { ok: boolean; dataUrl?: string; size?: number; ext?: string };
+    try {
+      img = await window.posse.readFileBase64(filePath);
+    } catch (err) {
+      console.error('readFileBase64 failed', err);
+      window.posse.openFile(filePath);
+      return;
+    }
+    if (!img.ok || !img.dataUrl) {
+      window.posse.openFile(filePath);
+      return;
+    }
+    filePreviewPath = filePath;
+    filePreviewName.textContent = name;
+    filePreviewName.title = filePath;
+    const kb = img.size ? (img.size / 1024).toFixed(1) : '0';
+    filePreviewMeta.textContent = `${img.ext || ext} · ${kb} KB`;
+    filePreviewPanel.hidden = false;
+    if (!filePreview) filePreview = createFilePreview(filePreviewBody);
+    filePreview.showImage(img.dataUrl, img.ext || ext);
+    return;
+  }
+
   let res: { ok: boolean; content?: string; size?: number; ext?: string; error?: string };
   try {
     res = await window.posse.readFile(filePath);
@@ -1419,6 +1452,7 @@ async function openFilePreview(filePath: string, name: string): Promise<void> {
   filePreviewMeta.textContent = `${res.ext || 'txt'} · ${kb} KB`;
   filePreviewPanel.hidden = false;
   if (!filePreview) filePreview = createFilePreview(filePreviewBody);
+  // The preview picks the render mode (markdown/html/source) from the extension.
   filePreview.show(res.content || '', res.ext || '');
 }
 
@@ -1537,6 +1571,12 @@ function syncSessionStatusToMain(): void {
 // Terminal manager
 const termManager = new TerminalManager(terminalContent, (id, cols, rows) => {
   window.posse.resizePty(id, cols, rows);
+});
+
+// Terminal clicks on previewable paths (.md/.html/images) open the preview pane.
+termManager.setPreviewHandler((filePath) => {
+  const name = filePath.split('/').pop() || filePath;
+  void openFilePreview(filePath, name);
 });
 
 // Restore the last working directory and preset command
