@@ -26,6 +26,7 @@ import {
   type RemoteConnectionStatus,
 } from './remote-server';
 import { ChatSessionManager } from './chat-session-manager';
+import { listResumableSessions } from './resumable-sessions';
 
 function readPackageVersion(): string {
   try {
@@ -80,8 +81,8 @@ async function main(): Promise<void> {
 
   // Start the token-auth remote server. Same wiring as the Electron main, minus all
   // BrowserWindow / tray / cloudflared callbacks (no-ops here).
-  // listResumableSessions is intentionally omitted in headless (the title-discovery helpers
-  // still live inline in index.ts); /api/resumable then returns []. See follow-up notes.
+  // listResumableSessions now comes from the shared electron-free resumable-sessions module,
+  // so headless /api/resumable returns the same Claude/Codex resumable list as the desktop.
   startRemoteServer(
     ptyManager,
     (sessionInfo) => {
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
         `[headless] clients=${status.connectedClients} subscribedSessions=${status.subscribedSessions}`,
       );
     },
+    listResumableSessions,
   );
 
   const shutdown = (signal: string): void => {
