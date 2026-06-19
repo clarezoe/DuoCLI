@@ -14,7 +14,7 @@ let token = localStorage.getItem('duocli_token') || '';
 let currentSessionId = null;
 let sseSource = null;
 // bump in lockstep with sw.js CACHE_NAME so a stale client cache is visible
-const CLIENT_BUILD = 'posse-v21';
+const CLIENT_BUILD = 'posse-v22';
 let lastServerInfo = null;
 
 // xterm.js 相关
@@ -1117,6 +1117,15 @@ function createTerminal() {
     if (typeof Unicode11Addon !== 'undefined') {
       term.loadAddon(new Unicode11Addon.Unicode11Addon());
       term.unicode.activeVersion = '11';
+    }
+  } catch {}
+
+  // 自动识别 URL，点按在新标签页打开（移动端无修饰键，直接 tap 打开）
+  try {
+    if (typeof WebLinksAddon !== 'undefined') {
+      term.loadAddon(new WebLinksAddon.WebLinksAddon((event, uri) => {
+        window.open(uri, '_blank', 'noopener,noreferrer');
+      }));
     }
   } catch {}
 
