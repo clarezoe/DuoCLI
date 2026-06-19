@@ -1,6 +1,7 @@
 import { Terminal, IBufferLine, ILinkProvider, ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { isPreviewableExt } from './file-preview';
 
 // Terminal color schemes
 const THEMES: Record<string, any> = {
@@ -392,6 +393,14 @@ export class TerminalManager {
   private lastFitSize: { w: number; h: number } = { w: 0, h: 0 };
   private fitCheckTimer: ReturnType<typeof setInterval> | null = null;
   private activeTheme: Record<string, string> | null = null;
+  // Optional handler: when a clicked terminal path is previewable (md/html/image),
+  // route it to the app's preview pane instead of opening in an external editor.
+  private previewHandler: ((filePath: string) => void) | null = null;
+
+  // Register the app-level preview-open function (returns true if it handled the path).
+  setPreviewHandler(handler: (filePath: string) => void): void {
+    this.previewHandler = handler;
+  }
 
   constructor(terminalArea: HTMLElement, onResize?: (id: string, cols: number, rows: number) => void) {
     this.terminalArea = terminalArea;
@@ -457,6 +466,12 @@ export class TerminalManager {
       terminal,
       () => cwd,
       (filePath) => {
+        // Previewable files (md/html/images) open in the app's preview pane.
+        const ext = (filePath.split('/').pop()?.split('.').pop() || '').toLowerCase();
+        if (this.previewHandler && isPreviewableExt(ext)) {
+          this.previewHandler(filePath);
+          return;
+        }
         (window as any).posse.filewatcherOpen(filePath).then((result: { ok?: boolean; error?: string } | undefined) => {
           if (result && result.ok === false) {
             console.error('Failed to open editor:', result.error);

@@ -694,6 +694,8 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 #file-preview-body .cm-editor {
@@ -702,6 +704,192 @@ html, body {
 
 #file-preview-body .cm-scroller {
   overflow: auto;
+}
+
+/* Mode hosts fill the remaining space below the optional toggle bar */
+.fp-source,
+.fp-markdown,
+.fp-html,
+.fp-image {
+  flex: 1;
+  min-height: 0;
+}
+
+.fp-source {
+  overflow: hidden;
+}
+
+.fp-source[hidden],
+.fp-markdown[hidden],
+.fp-html[hidden],
+.fp-image[hidden] {
+  display: none;
+}
+
+/* Source/rendered toggle bar */
+.fp-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  background: var(--bg-secondary, #161616);
+}
+
+.fp-toggle[hidden] {
+  display: none;
+}
+
+.fp-toggle-btn {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #333);
+  background: var(--bg-tertiary, #222);
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+}
+
+.fp-toggle-btn:hover {
+  color: var(--text-primary, #eee);
+  border-color: var(--accent, #3fb950);
+}
+
+/* HTML preview iframe (sandboxed) */
+.fp-html {
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
+/* Image preview */
+.fp-image {
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--bg-secondary, #0d0d0d);
+}
+
+.fp-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+/* Rendered markdown typography */
+.fp-markdown.markdown-body {
+  overflow: auto;
+  padding: 20px 24px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary, #e6e6e6);
+  word-wrap: break-word;
+}
+
+.fp-markdown.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.fp-markdown.markdown-body h1,
+.fp-markdown.markdown-body h2,
+.fp-markdown.markdown-body h3,
+.fp-markdown.markdown-body h4,
+.fp-markdown.markdown-body h5,
+.fp-markdown.markdown-body h6 {
+  margin: 1.4em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary, #fff);
+}
+
+.fp-markdown.markdown-body h1 { font-size: 1.7em; border-bottom: 1px solid var(--border, #2a2a2a); padding-bottom: 0.3em; }
+.fp-markdown.markdown-body h2 { font-size: 1.4em; border-bottom: 1px solid var(--border, #2a2a2a); padding-bottom: 0.3em; }
+.fp-markdown.markdown-body h3 { font-size: 1.2em; }
+
+.fp-markdown.markdown-body p,
+.fp-markdown.markdown-body ul,
+.fp-markdown.markdown-body ol,
+.fp-markdown.markdown-body blockquote,
+.fp-markdown.markdown-body table {
+  margin: 0 0 1em;
+}
+
+.fp-markdown.markdown-body ul,
+.fp-markdown.markdown-body ol {
+  padding-left: 2em;
+}
+
+.fp-markdown.markdown-body li + li {
+  margin-top: 0.25em;
+}
+
+.fp-markdown.markdown-body a {
+  color: var(--accent, #3fb950);
+  text-decoration: none;
+}
+
+.fp-markdown.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.fp-markdown.markdown-body code {
+  font-family: Menlo, Monaco, "Courier New", monospace;
+  font-size: 0.88em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.08));
+}
+
+.fp-markdown.markdown-body pre {
+  margin: 0 0 1em;
+  padding: 12px 14px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg-tertiary, #161616);
+  border: 1px solid var(--border, #2a2a2a);
+}
+
+.fp-markdown.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.fp-markdown.markdown-body blockquote {
+  padding: 0 1em;
+  color: var(--text-secondary, #999);
+  border-left: 3px solid var(--border, #444);
+}
+
+.fp-markdown.markdown-body table {
+  border-collapse: collapse;
+  display: block;
+  overflow: auto;
+}
+
+.fp-markdown.markdown-body th,
+.fp-markdown.markdown-body td {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #333);
+}
+
+.fp-markdown.markdown-body th {
+  background: var(--bg-tertiary, #1a1a1a);
+  font-weight: 600;
+}
+
+.fp-markdown.markdown-body img {
+  max-width: 100%;
+}
+
+.fp-markdown.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--border, #2a2a2a);
+  margin: 1.5em 0;
 }
 
 .file-preview-error {

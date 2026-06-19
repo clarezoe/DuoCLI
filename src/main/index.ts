@@ -1874,6 +1874,27 @@ function registerIPC(): void {
     }
   });
 
+  // Read a file as a base64 data URL (for image previews). Never throws.
+  ipcMain.handle('fs:read-file-base64', (_e, filePath: string) => {
+    const MAX_IMAGE_BYTES = 16 * 1024 * 1024; // 16MB cap
+    try {
+      const abs = path.resolve(String(filePath || ''));
+      const st = fs.statSync(abs);
+      if (!st.isFile()) return { ok: false, error: 'not-a-file' };
+      if (st.size > MAX_IMAGE_BYTES) return { ok: false, error: 'too-large', size: st.size };
+      const ext = path.extname(abs).slice(1).toLowerCase();
+      const mimeByExt: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+        svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
+      };
+      const mime = mimeByExt[ext] || 'application/octet-stream';
+      const buf = fs.readFileSync(abs);
+      return { ok: true, dataUrl: `data:${mime};base64,${buf.toString('base64')}`, size: st.size, ext };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
   // List a directory's native session history in Claude Code (~/.claude/projects/<encoded>/<uuid>.jsonl)
   ipcMain.handle('claude-sessions:list', (_e, cwd: string) => listResumableSessions(cwd));
 

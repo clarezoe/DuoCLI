@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('posse', {
   fileTreeTrash: (p: string) => ipcRenderer.invoke('file-tree:trash', p),
   // Read file contents (for the right-side read-only preview panel)
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
+  // Read a (binary) file as a base64 data URL — used for image previews
+  readFileBase64: (filePath: string) => ipcRenderer.invoke('fs:read-file-base64', filePath),
   // List a directory's native session history in Claude Code
   claudeSessionsList: (cwd: string) => ipcRenderer.invoke('claude-sessions:list', cwd),
   // Projects-first discovery: every AI-CLI session bucketed by project folder
