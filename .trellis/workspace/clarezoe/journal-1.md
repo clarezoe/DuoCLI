@@ -178,3 +178,36 @@ onPtyData marked any pty chunk (incl. cursor/OSC/spinner redraws) as busy->unrea
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Show added folder's agent sessions past global 300 cap
+
+**Date**: 2026-06-20
+**Task**: Show added folder's agent sessions past global 300 cap
+**Branch**: `main`
+
+### Summary
+
+discoverClaude/CodexSessions cap at newest 300 globally, so a newly added folder with older sessions showed empty. buildProjectsList now does a per-folder fill-in for each extraFolders entry (scan ~/.claude/projects/<encoded> + listCodexSessions per cwd), merged+deduped by agent+id, capped 50/agent. Factored buildClaudeSessionFromFile/scanClaudeSessionsForFolder; added AgentHistorySession.sourcePath.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ff777e5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
