@@ -1000,6 +1000,93 @@ type ProjectEntry = {
 const PROJECTS_MAX_SESSIONS_PER_AGENT = 50;
 
 
+// Build one Claude DiscoveredSession from a jsonl file. Shared by the global
+// discovery pass and the per-folder fill-in pass so both resolve titles/cwd the
+// same way. `forceCwd`, when set, buckets the session under that folder regardless
+// of the in-file cwd (used by the per-folder pass to bucket under the tracked folder).
+function buildClaudeSessionFromFile(
+  full: string,
+  uuid: string,
+  mtimeMs: number,
+  size: number,
+  forceCwd?: string,
+): DiscoveredSession | null {
+  try {
+    // Head read: recover real cwd + first-real-user-message fallback (titles handled below).
+    const head = readHead(full);
+    const lines = head.split('\n');
+    let cwd = '';
+    let firstUserTitle = '';
+    let renameTitle = '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let obj: { type?: string; cwd?: string; message?: { content?: unknown } };
+      try { obj = JSON.parse(trimmed); } catch { continue; }
+      if (!cwd && typeof obj.cwd === 'string' && obj.cwd) cwd = obj.cwd;
+      // Legacy rename marker (low-priority fallback). Match the RAW text; last rename wins.
+      if (obj.type === 'user' && typeof obj.message?.content === 'string') {
+        const r = extractRenameTitle(obj.message.content);
+        if (r) renameTitle = r;
+      }
+      // First REAL user prompt: skip the injected "Caveat:" system preamble, empty/tag-only
+      // messages, and continuation meta. Take the first one that survives the filter.
+      if (!firstUserTitle && obj.type === 'user' && typeof obj.message?.content === 'string') {
+        const cleaned = cleanSessionTitle(obj.message.content);
+        if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
+      }
+    }
+    // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
+    // the head window. Scan the whole file (or tail for huge files) to recover them.
+    const title = getCachedClaudeTitle(full, mtimeMs, size, () => {
+      const titleFields = findClaudeTitleFields(full, size);
+      return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, uuid);
+    });
+    const resolvedCwd = forceCwd !== undefined ? forceCwd : (cwd ? path.resolve(cwd) : '');
+    return {
+      agent: 'claude',
+      cwd: resolvedCwd,
+      id: uuid,
+      title,
+      mtimeMs,
+      resumeCommand: `claude --resume ${uuid}`,
+      sourcePath: full,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Scan ONE folder's Claude project dir directly (~/.claude/projects/<encoded>/*.jsonl),
+// newest first, up to `limit`. Used by the per-folder fill-in pass so a tracked folder's
+// sessions appear even when they're older than the global newest-300 cap.
+function scanClaudeSessionsForFolder(abs: string, limit: number): DiscoveredSession[] {
+  const out: DiscoveredSession[] = [];
+  try {
+    const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-');
+    const dir = path.join(os.homedir(), '.claude', 'projects', encoded);
+    if (!fs.existsSync(dir)) return [];
+    const files: Array<{ full: string; uuid: string; mtimeMs: number; size: number }> = [];
+    let names: string[];
+    try { names = fs.readdirSync(dir); } catch { return []; }
+    for (const name of names) {
+      if (!name.endsWith('.jsonl')) continue;
+      const full = path.join(dir, name);
+      try {
+        const st = fs.statSync(full);
+        if (!st.isFile()) continue;
+        files.push({ full, uuid: name.replace(/\.jsonl$/, ''), mtimeMs: st.mtimeMs, size: st.size });
+      } catch { /* skip */ }
+    }
+    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const f of files.slice(0, limit)) {
+      const s = buildClaudeSessionFromFile(f.full, f.uuid, f.mtimeMs, f.size, abs);
+      if (s) out.push(s);
+    }
+  } catch { /* never throw */ }
+  return out;
+}
+
 // --- Claude: ~/.claude/projects/<enc>/<uuid>.jsonl ; real cwd from in-file `cwd` ---
 function discoverClaudeSessions(): DiscoveredSession[] {
   const MAX_FILES = 300;
@@ -1033,47 +1120,8 @@ function discoverClaudeSessions(): DiscoveredSession[] {
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
     for (const f of files.slice(0, MAX_FILES)) {
-      try {
-        // Head read: recover real cwd + first-real-user-message fallback (titles handled below).
-        const head = readHead(f.full);
-        const lines = head.split('\n');
-        let cwd = '';
-        let firstUserTitle = '';
-        let renameTitle = '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let obj: { type?: string; cwd?: string; message?: { content?: unknown } };
-          try { obj = JSON.parse(trimmed); } catch { continue; }
-          if (!cwd && typeof obj.cwd === 'string' && obj.cwd) cwd = obj.cwd;
-          // Legacy rename marker (low-priority fallback). Match the RAW text; last rename wins.
-          if (obj.type === 'user' && typeof obj.message?.content === 'string') {
-            const r = extractRenameTitle(obj.message.content);
-            if (r) renameTitle = r;
-          }
-          // First REAL user prompt: skip the injected "Caveat:" system preamble, empty/tag-only
-          // messages, and continuation meta. Take the first one that survives the filter.
-          if (!firstUserTitle && obj.type === 'user' && typeof obj.message?.content === 'string') {
-            const cleaned = cleanSessionTitle(obj.message.content);
-            if (isRealUserPrompt(cleaned)) firstUserTitle = cleaned;
-          }
-        }
-        // Title-type lines (customTitle/agentName/aiTitle) can appear far into the file, beyond
-        // the head window. Scan the whole file (or tail for huge files) to recover them.
-        const title = getCachedClaudeTitle(f.full, f.mtimeMs, f.size, () => {
-          const titleFields = findClaudeTitleFields(f.full, f.size);
-          return resolveClaudeTitle(titleFields, firstUserTitle, renameTitle, f.uuid);
-        });
-        out.push({
-          agent: 'claude',
-          cwd: cwd ? path.resolve(cwd) : '',
-          id: f.uuid,
-          title,
-          mtimeMs: f.mtimeMs,
-          resumeCommand: `claude --resume ${f.uuid}`,
-          sourcePath: f.full,
-        });
-      } catch { /* skip unreadable file */ }
+      const s = buildClaudeSessionFromFile(f.full, f.uuid, f.mtimeMs, f.size);
+      if (s) out.push(s);
     }
   } catch { /* never throw */ }
   return out;
@@ -1360,12 +1408,50 @@ function buildProjectsList(extraFolders: string[] = []): ProjectEntry[] {
     });
   }
 
-  // Ensure explicitly-added folders appear even with no sessions.
+  // Ensure explicitly-added folders appear even with no sessions, and FILL IN their
+  // Claude + Codex sessions via a targeted per-folder scan. The global discovery above
+  // only keeps the newest 300 files GLOBALLY, so a tracked folder whose sessions are
+  // older than that cap would otherwise render empty. This pass pulls that folder's own
+  // sessions directly, deduping (agent + id) against anything already discovered globally.
   for (const folder of extraFolders) {
     try {
       const abs = path.resolve(String(folder || ''));
       if (!abs) continue;
-      getBucket(abs, abs, path.basename(abs) || abs);
+      const bucket = getBucket(abs, abs, path.basename(abs) || abs);
+
+      const mergeIntoBucket = (sessions: DiscoveredSession[]) => {
+        for (const s of sessions) {
+          let arr = bucket.agentMap.get(s.agent);
+          if (!arr) { arr = []; bucket.agentMap.set(s.agent, arr); }
+          // Dedupe by agent + id: a session already added by the global pass for this
+          // bucket must not produce a duplicate row.
+          if (arr.some((existing) => existing.id === s.id)) continue;
+          arr.push({
+            id: s.id,
+            title: s.title,
+            mtimeMs: s.mtimeMs,
+            resumeCommand: s.resumeCommand,
+            agent: s.agent,
+            sourcePath: s.sourcePath,
+            archived: archivedIds.has(s.id),
+          });
+        }
+      };
+
+      // Claude: scan ~/.claude/projects/<encoded>/ directly, bucketed under this folder.
+      mergeIntoBucket(scanClaudeSessionsForFolder(abs, PROJECTS_MAX_SESSIONS_PER_AGENT));
+
+      // Codex: reuse the per-cwd reader (cwd matched from session_meta; uncapped at 300).
+      const codex = listCodexSessions(abs);
+      mergeIntoBucket(codex.slice(0, PROJECTS_MAX_SESSIONS_PER_AGENT).map((c) => ({
+        agent: 'codex' as ProjectsAgentId,
+        cwd: abs,
+        id: c.id,
+        title: c.title,
+        mtimeMs: c.mtimeMs,
+        resumeCommand: c.resumeCommand,
+        sourcePath: c.sourcePath || '',
+      })));
     } catch { /* ignore bad folder */ }
   }
 

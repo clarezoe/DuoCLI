@@ -22,6 +22,10 @@ export type AgentHistorySession = {
   mtimeMs: number;
   agent: 'claude' | 'codex';
   resumeCommand: string;
+  // Backing session file path (Codex rollout jsonl). Optional: consumers that
+  // need to delete/archive the session route by this; absent for callers that
+  // don't populate it.
+  sourcePath?: string;
 };
 
 // Read the first line of a file (up to ~16KB) for cheap parsing of the Codex session_meta
@@ -154,6 +158,7 @@ export function listCodexSessions(targetCwd: string): AgentHistorySession[] {
                 mtimeMs: st.mtimeMs,
                 agent: 'codex',
                 resumeCommand: `codex resume ${id}`,
+                sourcePath: full,
               });
             } catch { /* skip unreadable / unparseable file */ }
           }
