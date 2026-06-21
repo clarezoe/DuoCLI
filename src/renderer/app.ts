@@ -373,6 +373,94 @@ const AGENT_ID_LABEL: Record<ProjectsAgentId, string> = {
   copilot: 'Copilot',
 };
 
+// ========== Agent filter tabs ==========
+// Agents are NOT nested as per-project collapsible groups anymore (that buried
+// sessions 3 levels deep and mixed agents in one long list). Instead a tab strip
+// at the top of the sidebar scopes the whole list to one agent (or All), so the
+// list stays short and one agent's work never mixes with another's.
+const AGENT_TAB_STORAGE_KEY = 'posse_agent_tab';
+let activeAgentTab: string = (() => {
+  try { return localStorage.getItem(AGENT_TAB_STORAGE_KEY) || 'all'; } catch { return 'all'; }
+})();
+function setActiveAgentTab(tab: string): void {
+  activeAgentTab = tab;
+  try { localStorage.setItem(AGENT_TAB_STORAGE_KEY, tab); } catch { /* ignore */ }
+}
+
+// Stable, known-first ordering for the tab strip.
+const KNOWN_AGENT_ORDER = ['Claude', 'Codex', 'Kiro', 'Copilot', 'Devin', 'OpenCode'];
+
+// Which agent families currently have ANY session (live / closed / on-disk history).
+function availableAgentFamilies(): string[] {
+  const set = new Set<string>();
+  for (const dn of sessionDisplayNames.values()) set.add(agentFamilyFromDisplayName(dn || ''));
+  for (const cs of closedSessions) set.add(agentFamilyFromDisplayName(cs.displayName || ''));
+  for (const bp of backendProjects.values()) {
+    for (const ag of bp.agents) {
+      if (ag.sessions && ag.sessions.length) set.add(AGENT_ID_LABEL[ag.agent] || agentFamilyFromDisplayName(ag.agent));
+    }
+  }
+  const known = KNOWN_AGENT_ORDER.filter(k => set.has(k));
+  const extras = Array.from(set).filter(f => !known.includes(f)).sort();
+  return [...known, ...extras];
+}
+
+// Per-render memo so collectProjectSessions() runs at most once per project per pass
+// (the tab filter and the row renderer both need it).
+let projectSessionsCache: Map<string, Map<string, ProjectAgentGroup>> = new Map();
+function getProjectSessions(projPath: string): Map<string, ProjectAgentGroup> {
+  const k = normalizeCwd(projPath);
+  let c = projectSessionsCache.get(k);
+  if (!c) { c = collectProjectSessions(projPath); projectSessionsCache.set(k, c); }
+  return c;
+}
+
+// True if the project has at least one session for the active agent tab.
+function projectVisibleUnderTab(p: ProjectEntry): boolean {
+  if (activeAgentTab === 'all') return true;
+  const g = getProjectSessions(p.path).get(activeAgentTab);
+  return !!g && (g.lives.length + g.closed.length + g.history.length) > 0;
+}
+
+// Render the agent tab strip into its static host above the search toolbar.
+function renderAgentTabs(): void {
+  const host = document.getElementById('agent-tabs');
+  if (!host) return;
+  host.innerHTML = '';
+  const families = availableAgentFamilies();
+  // If the selected agent no longer has any sessions, fall back to All.
+  if (activeAgentTab !== 'all' && !families.includes(activeAgentTab)) setActiveAgentTab('all');
+  for (const t of ['all', ...families]) {
+    const btn = document.createElement('button');
+    btn.className = 'agent-tab' + (t === activeAgentTab ? ' active' : '');
+    btn.textContent = t === 'all' ? 'All' : t;
+    if (t !== 'all') {
+      const [fg] = getCliTagColors(t);
+      const dotc = document.createElement('span');
+      dotc.className = 'agent-tab-dot';
+      dotc.style.backgroundColor = fg;
+      btn.prepend(dotc);
+    }
+    btn.addEventListener('click', () => {
+      if (activeAgentTab !== t) { setActiveAgentTab(t); renderSessionList(); }
+    });
+    host.appendChild(btn);
+  }
+}
+
+// In the "All" tab, prefix a session row with a small colored agent tag so mixed
+// agents stay distinguishable without a group header.
+function appendAgentTag(row: HTMLElement, family: string): void {
+  const tag = document.createElement('span');
+  tag.className = 'nav-session-agent-tag';
+  const [fg, bg] = getCliTagColors(family);
+  tag.textContent = family;
+  tag.style.color = fg;
+  tag.style.backgroundColor = bg;
+  // Insert right after the status dot (children[0]), before the title.
+  row.insertBefore(tag, row.children[1] || null);
+}
+
 // Fetch the multi-agent project list from the backend, merging in the user's added folders so they
 // always appear, then refresh the navigator. Also ensures every discovered folder with sessions
 // shows up in the navigator even if the user never explicitly added it.
@@ -2610,9 +2698,38 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
 
   if (!isExpanded) return;
 
-  // Expanded: sessions grouped by agent
-  const groups = collectProjectSessions(p.path);
-  if (groups.size === 0) {
+  // Expanded: render sessions DIRECTLY under the project (no agent sub-headers).
+  // The active agent tab scopes which families are shown; in "All", every family
+  // is shown and each row carries a small agent tag.
+  const groups = getProjectSessions(p.path);
+  const families = activeAgentTab === 'all'
+    ? Array.from(groups.keys())
+    : (groups.has(activeAgentTab) ? [activeAgentTab] : []);
+
+  // Flatten the selected families into one time-desc list so the most recent
+  // conversation is always at the top regardless of which agent it belongs to.
+  const rows: Array<{ time: number; el: HTMLElement }> = [];
+  const tagged = activeAgentTab === 'all';
+  for (const family of families) {
+    const g = groups.get(family)!;
+    for (const id of g.lives) {
+      const el = buildLiveSessionRow(id, activeId);
+      if (tagged) appendAgentTag(el, family);
+      rows.push({ time: sessionUpdateTimes.get(id) || 0, el });
+    }
+    for (const cs of g.closed) {
+      const el = buildClosedSessionRow(cs);
+      if (tagged) appendAgentTag(el, family);
+      rows.push({ time: cs.closedAt || 0, el });
+    }
+    for (const s of g.history) {
+      const el = buildHistorySessionRow(s);
+      if (tagged) appendAgentTag(el, family);
+      rows.push({ time: s.mtimeMs || 0, el });
+    }
+  }
+
+  if (rows.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'nav-project-empty';
     empty.textContent = 'No conversations yet';
@@ -2620,52 +2737,8 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
     return;
   }
 
-  // Order agent groups by most-recent activity desc
-  const sortedFamilies = Array.from(groups.keys()).sort(
-    (a, b) => (groups.get(b)!.latest) - (groups.get(a)!.latest)
-  );
-
-  for (const family of sortedFamilies) {
-    const g = groups.get(family)!;
-    const groupKey = `${key}::${family}`;
-    // Agent groups are COLLAPSED by default: only expanded if explicitly opened by the user.
-    // While searching, auto-expand groups that contain a matching session title.
-    const groupCollapsed =
-      searching && agentGroupMatchesSearch(g) ? false : !expandedAgentGroups.has(groupKey);
-    const count = g.lives.length + g.closed.length + g.history.length;
-
-    const groupHeader = document.createElement('div');
-    groupHeader.className = 'nav-agent-header';
-    const [tagColor] = getCliTagColors(family);
-    groupHeader.style.borderLeftColor = tagColor;
-
-    const gChevron = document.createElement('span');
-    gChevron.className = 'nav-agent-chevron';
-    gChevron.textContent = groupCollapsed ? '▸' : '▾';
-
-    const gName = document.createElement('span');
-    gName.className = 'nav-agent-name';
-    gName.textContent = family;
-
-    const gCount = document.createElement('span');
-    gCount.className = 'nav-agent-count';
-    gCount.textContent = String(count);
-
-    groupHeader.appendChild(gChevron);
-    groupHeader.appendChild(gName);
-    groupHeader.appendChild(gCount);
-    groupHeader.addEventListener('click', () => {
-      setAgentGroupExpanded(groupKey, !expandedAgentGroups.has(groupKey));
-      renderSessionList();
-    });
-    sessionList.appendChild(groupHeader);
-
-    if (groupCollapsed) continue;
-
-    for (const id of g.lives) sessionList.appendChild(buildLiveSessionRow(id, activeId));
-    for (const cs of g.closed) sessionList.appendChild(buildClosedSessionRow(cs));
-    for (const s of g.history) sessionList.appendChild(buildHistorySessionRow(s));
-  }
+  rows.sort((a, b) => b.time - a.time);
+  for (const r of rows) sessionList.appendChild(r.el);
 }
 
 function renderSessionList(): void {
@@ -2685,8 +2758,17 @@ function renderSessionList(): void {
   }
   sessionList.innerHTML = '';
 
-  const pinned = sortProjects(projects.filter(p => p.pinned && projectMatchesSearch(p)));
-  const rest = sortProjects(projects.filter(p => !p.pinned && projectMatchesSearch(p)));
+  // Fresh per-render session memo, then (re)build the agent tab strip.
+  projectSessionsCache = new Map();
+  renderAgentTabs();
+
+  // Tab filter: while searching, ignore the tab so any match surfaces; otherwise
+  // hide projects that have no session for the active agent.
+  const tabFilter = (p: ProjectEntry) =>
+    projectSearchQuery.length > 0 || projectVisibleUnderTab(p);
+
+  const pinned = sortProjects(projects.filter(p => p.pinned && projectMatchesSearch(p) && tabFilter(p)));
+  const rest = sortProjects(projects.filter(p => !p.pinned && projectMatchesSearch(p) && tabFilter(p)));
 
   // ========== Pinned section ==========
   if (pinned.length > 0) {
