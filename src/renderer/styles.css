@@ -1246,6 +1246,11 @@ html, body {
   text-transform: uppercase;
   color: var(--text-secondary, #888);
   user-select: none;
+  cursor: pointer;
+}
+
+.nav-section-header.collapsed .nav-section-label {
+  opacity: 0.6;
 }
 
 .nav-section-label {
@@ -1303,14 +1308,6 @@ html, body {
 
 .nav-project-row.selected .nav-project-name {
   color: var(--accent, #0078d4);
-}
-
-.nav-project-chevron {
-  width: 12px;
-  flex-shrink: 0;
-  text-align: center;
-  font-size: 10px;
-  color: var(--text-secondary, #888);
 }
 
 .nav-project-icon {
