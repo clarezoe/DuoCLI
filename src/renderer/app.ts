@@ -3894,30 +3894,12 @@ function clearAllLocalSessions(): void {
   void renderFileTree();
 }
 
-// Graceful daemon restart: confirm inline, save+restart, then refresh navigator.
+// Graceful daemon restart: confirm via a small popover (the toolbar button stays an
+// icon — never overwrite it with text), spin the icon while restarting, then refresh.
 if (toolbarRestartDaemonBtn) {
-  let restartConfirmArmed = false;
-  let restartConfirmTimer: ReturnType<typeof setTimeout> | null = null;
-  const restartDefaultLabel = 'Restart daemon';
-
-  const disarmRestartConfirm = (): void => {
-    restartConfirmArmed = false;
-    if (restartConfirmTimer) { clearTimeout(restartConfirmTimer); restartConfirmTimer = null; }
-    if (toolbarRestartDaemonBtn) toolbarRestartDaemonBtn.textContent = restartDefaultLabel;
-  };
-
-  toolbarRestartDaemonBtn.addEventListener('click', async () => {
-    if (!restartConfirmArmed) {
-      // First click: arm an inline confirm (live terminals close but are saved as resumable).
-      restartConfirmArmed = true;
-      toolbarRestartDaemonBtn.textContent = 'Click again to restart';
-      restartConfirmTimer = setTimeout(disarmRestartConfirm, 4000);
-      return;
-    }
-    disarmRestartConfirm();
-
+  const runDaemonRestart = async (): Promise<void> => {
     toolbarRestartDaemonBtn.disabled = true;
-    toolbarRestartDaemonBtn.textContent = 'Restarting…';
+    toolbarRestartDaemonBtn.classList.add('spinning');
     try {
       const result = await window.posse.daemonRestart();
       if (result.ok) {
@@ -3926,21 +3908,54 @@ if (toolbarRestartDaemonBtn) {
         clearAllLocalSessions();
         await restoreDaemonSessions();
         await refreshProjectsData();
+        showBriefNotice('Daemon restarted — live sessions saved as resumable.');
       } else {
         console.error('[Renderer] Daemon restart failed:', result.error);
-        toolbarRestartDaemonBtn.textContent = 'Restart failed';
-        setTimeout(() => { if (toolbarRestartDaemonBtn) toolbarRestartDaemonBtn.textContent = restartDefaultLabel; }, 3000);
-        return;
+        showBriefNotice('Daemon restart failed: ' + (result.error || 'unknown error'));
       }
     } catch (error) {
       console.error('[Renderer] Daemon restart error:', error);
-      toolbarRestartDaemonBtn.textContent = 'Restart failed';
-      setTimeout(() => { if (toolbarRestartDaemonBtn) toolbarRestartDaemonBtn.textContent = restartDefaultLabel; }, 3000);
-      return;
+      showBriefNotice('Daemon restart failed.');
     } finally {
       toolbarRestartDaemonBtn.disabled = false;
+      toolbarRestartDaemonBtn.classList.remove('spinning');
     }
-    toolbarRestartDaemonBtn.textContent = restartDefaultLabel;
+  };
+
+  toolbarRestartDaemonBtn.addEventListener('click', () => {
+    dismissNavMenus();
+    const menu = document.createElement('div');
+    menu.className = 'term-context-menu nav-popup-menu nav-confirm-menu';
+
+    const text = document.createElement('div');
+    text.className = 'nav-confirm-text';
+    text.textContent = 'Restart the terminal daemon? Live terminals close but are saved as resumable.';
+    menu.appendChild(text);
+
+    const confirmItem = document.createElement('div');
+    confirmItem.className = 'term-context-item danger separated';
+    confirmItem.textContent = 'Restart daemon';
+    confirmItem.addEventListener('click', () => { menu.remove(); void runDaemonRestart(); });
+    menu.appendChild(confirmItem);
+
+    const cancelItem = document.createElement('div');
+    cancelItem.className = 'term-context-item';
+    cancelItem.textContent = 'Cancel';
+    cancelItem.addEventListener('click', () => menu.remove());
+    menu.appendChild(cancelItem);
+
+    // Anchor below the toolbar button, right-aligned so it never overflows the edge.
+    document.body.appendChild(menu);
+    const rect = toolbarRestartDaemonBtn.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
+    const dismiss = (ev: Event): void => {
+      if (!menu.contains(ev.target as Node) && ev.target !== toolbarRestartDaemonBtn) {
+        menu.remove();
+        document.removeEventListener('mousedown', dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
   });
 }
 
