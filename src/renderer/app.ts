@@ -337,6 +337,37 @@ function saveExpandState(): void {
 
 loadExpandState();
 
+// Per-section collapsed state (persisted). Holds 'pinned' / 'projects' when that whole section is
+// collapsed; when collapsed the section's project rows are skipped but the header stays visible.
+const COLLAPSED_SECTIONS_STORAGE_KEY = 'posse_collapsed_sections';
+const collapsedSections: Set<string> = new Set();
+
+function loadCollapsedSections(): void {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_SECTIONS_STORAGE_KEY) || '[]');
+    if (Array.isArray(raw)) for (const k of raw) collapsedSections.add(String(k));
+  } catch {
+    /* ignore corrupt state */
+  }
+}
+
+function saveCollapsedSections(): void {
+  try {
+    localStorage.setItem(COLLAPSED_SECTIONS_STORAGE_KEY, JSON.stringify(Array.from(collapsedSections)));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function toggleSectionCollapsed(key: string): void {
+  if (collapsedSections.has(key)) collapsedSections.delete(key);
+  else collapsedSections.add(key);
+  saveCollapsedSections();
+  renderSessionList();
+}
+
+loadCollapsedSections();
+
 function setProjectExpanded(key: string, expanded: boolean): void {
   if (expanded) expandedProjects.add(key);
   else expandedProjects.delete(key);
@@ -2539,10 +2570,6 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
   const row = document.createElement('div');
   row.className = 'nav-project-row' + (isExpanded ? ' expanded' : '') + (isSelected ? ' selected' : '');
 
-  const chevron = document.createElement('span');
-  chevron.className = 'nav-project-chevron';
-  chevron.textContent = isExpanded ? '▾' : '▸';
-
   const icon = document.createElement('span');
   icon.className = 'nav-project-icon';
   icon.innerHTML = ICON.folder;
@@ -2584,25 +2611,20 @@ function renderProjectEntry(p: ProjectEntry, activeId: string | null): void {
   actions.appendChild(editBtn);
   actions.appendChild(newBtn);
 
-  row.appendChild(chevron);
   row.appendChild(icon);
   row.appendChild(nameSpan);
   row.appendChild(actions);
 
-  // Chevron toggles collapse/expand only (without changing selection)
-  chevron.addEventListener('click', (e) => {
-    e.stopPropagation();
+  // Clicking the row (name / non-button area) both SELECTS the project (drives the RIGHT file panel)
+  // and toggles its expand/collapse state. Action buttons stopPropagation so they don't toggle.
+  row.addEventListener('click', () => {
     if (expandedProjects.has(key)) {
       setProjectExpanded(key, false);
     } else {
       setProjectExpanded(key, true);
       if (!backendProjects.has(key) && !projectsDataLoading) void refreshProjectsData();
     }
-    renderSessionList();
-  });
-
-  // Clicking the row selects the project (drives the RIGHT file panel) and expands it.
-  row.addEventListener('click', () => {
+    // selectProject sets the selection + re-renders the nav (reflecting the new expand state).
     selectProject(p.path);
   });
 
@@ -2690,19 +2712,27 @@ function renderSessionList(): void {
 
   // ========== Pinned section ==========
   if (pinned.length > 0) {
+    const pinnedCollapsed = collapsedSections.has('pinned');
     const header = document.createElement('div');
-    header.className = 'nav-section-header';
+    header.className = 'nav-section-header' + (pinnedCollapsed ? ' collapsed' : '');
     const label = document.createElement('span');
     label.className = 'nav-section-label';
     label.textContent = 'Pinned';
     header.appendChild(label);
+    // Clicking the header toggles the whole section's collapsed state.
+    header.addEventListener('click', () => toggleSectionCollapsed('pinned'));
     sessionList.appendChild(header);
-    for (const p of pinned) renderProjectEntry(p, activeId);
+    if (!pinnedCollapsed) {
+      for (const p of pinned) renderProjectEntry(p, activeId);
+    }
   }
 
   // ========== Projects section ==========
+  const projectsCollapsed = collapsedSections.has('projects');
   const header = document.createElement('div');
-  header.className = 'nav-section-header';
+  header.className = 'nav-section-header' + (projectsCollapsed ? ' collapsed' : '');
+  // Clicking the header (excluding its action buttons, which stopPropagation) toggles the section.
+  header.addEventListener('click', () => toggleSectionCollapsed('projects'));
   const label = document.createElement('span');
   label.className = 'nav-section-label';
   label.textContent = 'Projects';
@@ -2747,13 +2777,15 @@ function renderSessionList(): void {
   header.appendChild(actions);
   sessionList.appendChild(header);
 
-  if (rest.length === 0 && pinned.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'nav-project-empty';
-    empty.textContent = projectSearchQuery ? 'No matching projects' : 'Add a project folder to get started';
-    sessionList.appendChild(empty);
-  } else {
-    for (const p of rest) renderProjectEntry(p, activeId);
+  if (!projectsCollapsed) {
+    if (rest.length === 0 && pinned.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'nav-project-empty';
+      empty.textContent = projectSearchQuery ? 'No matching projects' : 'Add a project folder to get started';
+      sessionList.appendChild(empty);
+    } else {
+      for (const p of rest) renderProjectEntry(p, activeId);
+    }
   }
 
   // ========== Chat sessions (project-independent) ==========
