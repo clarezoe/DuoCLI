@@ -19,3 +19,22 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
+
+## Project conventions (preserved — outside the Trellis block)
+
+### After every new build/version, tell me what to restart
+When you ship a new version (build:mac → installed to /Applications), always tell me
+explicitly whether I need to **restart both the app AND the daemon**, or **only the app**.
+
+Rule of thumb:
+- **App only** — changes to the renderer (`src/renderer/`), preload (`src/preload/`),
+  `src/main/index.ts` window/IPC/menu wiring, or the mobile/terminal-client static assets.
+  Restarting the app reconnects to the existing daemon; live sessions survive.
+- **App + daemon** — changes to daemon-resident code: `src/main/pty-manager.ts`,
+  `src/main/pty-daemon.ts`, `src/main/pty-backend.ts`, or the spawn/protocol logic in
+  `src/main/pty-daemon-client.ts`. The app restart does NOT swap daemon code (the daemon
+  is kept alive on purpose); restart the daemon via the "Restart daemon" button (it saves
+  live sessions as resumable first — never SIGKILL it).
+
+State the verdict on each version handoff, e.g. "v1.2.X installed — app-only restart" or
+"v1.2.X — restart app AND daemon (touched pty-manager.ts)".
