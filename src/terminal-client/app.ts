@@ -1,6 +1,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 
 type DaemonConfig = {
   token: string;
@@ -215,6 +216,13 @@ function createTerminal(session: PtySession): TerminalInstance {
   const unicode11Addon = new Unicode11Addon();
   terminal.loadAddon(unicode11Addon);
   terminal.unicode.activeVersion = '11';
+
+  // Auto-detect URLs; Ctrl (Win/Linux) / Cmd (macOS) + click opens in a new browser tab.
+  // The modifier gate prevents a plain click (text selection) from navigating away.
+  terminal.loadAddon(new WebLinksAddon((event: MouseEvent, uri: string) => {
+    if (!event || !(event.metaKey || event.ctrlKey)) return;
+    window.open(uri, '_blank', 'noopener,noreferrer');
+  }));
 
   const container = document.createElement('div');
   container.className = 'terminal-container';

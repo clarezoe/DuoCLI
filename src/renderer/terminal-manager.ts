@@ -312,7 +312,12 @@ class FilePathLinkProvider implements ILinkProvider {
             end: { x: posCell[ei] + 1, y: posLine[ei] + 1 },
           },
           text: m.display,
-          activate: () => { (window as any).posse?.openUrl?.(m.filePath); },
+          // Require Ctrl (Win/Linux) / Cmd (macOS) so a plain click (cursor placement /
+          // text selection) does not fire the browser. Matches editor/terminal convention.
+          activate: (event: MouseEvent) => {
+            if (!event || !(event.metaKey || event.ctrlKey)) return;
+            (window as any).posse?.openUrl?.(m.filePath);
+          },
         });
       } else {
         let resolved = m.filePath;
