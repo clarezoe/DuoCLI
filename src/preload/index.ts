@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('posse', {
   openUrl: (url: string) => ipcRenderer.invoke('shell:open-url', url),
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
   getBuildInfo: () => ipcRenderer.invoke('app:get-build-info'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
   getTerminalClientUrl: () => ipcRenderer.invoke('terminal-client:get-url'),
 
   // AI config API
