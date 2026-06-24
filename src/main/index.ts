@@ -2024,6 +2024,75 @@ function registerIPC(): void {
     return result.filePaths[0];
   });
 
+  // Create a NEW GitHub repo via the `gh` CLI and clone it locally ("Start from scratch").
+  // Returns { ok, path? , error? } — never throws across IPC.
+  // gh may not be on the GUI app's PATH (Electron inherits a minimal launchd env), so we probe
+  // common install locations before giving up.
+  ipcMain.handle(
+    'project:create-github-repo',
+    async (
+      _e,
+      opts: { name: string; visibility: 'private' | 'public'; parentDir: string }
+    ): Promise<{ ok: boolean; path?: string; error?: string }> => {
+      try {
+        const name = String(opts?.name || '').trim();
+        const visibility = opts?.visibility === 'public' ? 'public' : 'private';
+        const parentDir = String(opts?.parentDir || '').trim();
+
+        // Light validation — gh does the authoritative check, but reject obvious breakage early.
+        if (!name) return { ok: false, error: 'Repository name is required' };
+        if (/[\s/\\]/.test(name)) {
+          return { ok: false, error: 'Repository name cannot contain spaces or slashes' };
+        }
+        if (!parentDir || !fs.existsSync(parentDir)) {
+          return { ok: false, error: 'Parent folder does not exist' };
+        }
+        const clonePath = path.join(parentDir, name);
+        if (fs.existsSync(clonePath)) {
+          return { ok: false, error: `"${name}" already exists in this folder` };
+        }
+
+        // Resolve the gh binary: rely on PATH first, then common Homebrew locations.
+        const ghCandidates = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh'];
+        const ghBin = ghCandidates.find((c) => c === 'gh' || fs.existsSync(c));
+        if (!ghBin) {
+          return { ok: false, error: 'gh CLI not found — install GitHub CLI' };
+        }
+
+        const { execFile } = require('child_process') as typeof import('child_process');
+        const result = await new Promise<{ ok: boolean; path?: string; error?: string }>(
+          (resolve) => {
+            execFile(
+              ghBin,
+              ['repo', 'create', name, `--${visibility}`, '--clone'],
+              { cwd: parentDir, timeout: 60000, windowsHide: true },
+              (err, _stdout, stderr) => {
+                if (err) {
+                  // gh exits non-zero on auth failure / name conflict / etc. Surface its message
+                  // so the UI can show hints like "run gh auth login".
+                  const msg = String(stderr || (err as Error).message || '').trim();
+                  if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+                    return resolve({ ok: false, error: 'gh CLI not found — install GitHub CLI' });
+                  }
+                  return resolve({ ok: false, error: msg || 'gh repo create failed' });
+                }
+                resolve({ ok: true });
+              }
+            );
+          }
+        );
+        if (!result.ok) return result;
+
+        if (!fs.existsSync(clonePath)) {
+          return { ok: false, error: 'Repo created but clone not found locally' };
+        }
+        return { ok: true, path: clonePath };
+      } catch (e) {
+        return { ok: false, error: (e as Error).message || 'Failed to create repository' };
+      }
+    }
+  );
+
   // List SSH hosts from ~/.ssh/config (Phase 1: SSH terminal host picker).
   // Returns connectable Host aliases (wildcard-only patterns excluded). HostName/User
   // are display-only hints. Never throws across IPC: returns [] on any failure.
