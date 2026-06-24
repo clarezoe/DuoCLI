@@ -958,33 +958,84 @@ async function refreshRecentCwdOptions() {
 // card on a not-found open) can re-render without an extra fetch.
 let lastSessions = [];
 
+// ---- 按项目文件夹分组（与桌面端侧栏一致）----
+// 分组键 = 规范化后的 cwd（去尾部斜杠）；显示标签 = cwd 的最后一段路径。
+// 无 cwd / 未知归入兜底分组「其它」。
+const FOLDER_COLLAPSE_KEY = 'duocli_collapsed_folders';
+
+function normalizeSessionCwd(cwd) {
+  return (cwd || '').trim().replace(/\/+$/, '');
+}
+
+function folderLabelFromCwd(cwd) {
+  const norm = normalizeSessionCwd(cwd);
+  if (!norm) return '其它';
+  return norm.split('/').filter(Boolean).pop() || norm;
+}
+
+function getCollapsedFolders() {
+  try {
+    const raw = localStorage.getItem(FOLDER_COLLAPSE_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function toggleFolderCollapsed(key) {
+  const set = getCollapsedFolders();
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  try {
+    localStorage.setItem(FOLDER_COLLAPSE_KEY, JSON.stringify([...set]));
+  } catch {}
+}
+
+// 把扁平 session 列表分组为 [{ key, label, sessions, lastActivity }]，
+// 按组内最近活动时间倒序（活跃项目浮在最上），组内保持原有顺序。
+function groupSessionsByFolder(sessions) {
+  const groups = new Map();
+  for (const s of sessions) {
+    const key = normalizeSessionCwd(s.cwd) || '__other__';
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, label: folderLabelFromCwd(s.cwd), sessions: [], lastActivity: 0 };
+      groups.set(key, g);
+    }
+    g.sessions.push(s);
+    const ts = s.createdAt || 0;
+    if (ts > g.lastActivity) g.lastActivity = ts;
+  }
+  return [...groups.values()].sort((a, b) => b.lastActivity - a.lastActivity);
+}
+
+function sessionCardHtml(s) {
+  const dn = s.displayName || '';
+  const [tagColor, tagBg] = dn ? getCliTagColors(dn) : ['', ''];
+  const tagHtml = dn
+    ? `<span class="cli-tag" style="--cli-c:${tagColor};--cli-bg:${tagBg}">${escHtml(dn)}</span>`
+    : '';
+  return `
+  <div class="session-card" data-id="${s.id}">
+    <div class="status-dot ${s.status}"></div>
+    <div class="session-info">
+      <div class="session-title-row">
+        <div class="session-title">${escHtml(s.title || s.presetCommand || '终端')}</div>
+        ${tagHtml}
+      </div>
+      <div class="session-meta">
+        <span class="session-time">${formatTime(s.createdAt)}</span>
+        <span class="session-cwd">${escHtml((s.cwd || '').split('/').pop() || s.cwd || '')}</span>
+      </div>
+    </div>
+    <div class="session-arrow">›</div>
+  </div>`;
+}
+
 function renderSessionList(sessions) {
   lastSessions = Array.isArray(sessions) ? sessions : [];
   const list = $('session-list');
   const empty = $('empty-state');
-
-  const allCards = sessions.map(s => {
-    const dn = s.displayName || '';
-    const [tagColor, tagBg] = dn ? getCliTagColors(dn) : ['', ''];
-    const tagHtml = dn
-      ? `<span class="cli-tag" style="--cli-c:${tagColor};--cli-bg:${tagBg}">${escHtml(dn)}</span>`
-      : '';
-    return `
-    <div class="session-card" data-id="${s.id}">
-      <div class="status-dot ${s.status}"></div>
-      <div class="session-info">
-        <div class="session-title-row">
-          <div class="session-title">${escHtml(s.title || s.presetCommand || '终端')}</div>
-          ${tagHtml}
-        </div>
-        <div class="session-meta">
-          <span class="session-time">${formatTime(s.createdAt)}</span>
-          <span class="session-cwd">${escHtml(s.cwd.split('/').pop() || s.cwd)}</span>
-        </div>
-      </div>
-      <div class="session-arrow">›</div>
-    </div>`;
-  }).join('');
 
   if (!sessions.length) {
     list.innerHTML = '';
@@ -993,7 +1044,31 @@ function renderSessionList(sessions) {
   }
 
   empty.style.display = 'none';
-  list.innerHTML = allCards;
+
+  const collapsed = getCollapsedFolders();
+  const groups = groupSessionsByFolder(sessions);
+  const html = groups.map(g => {
+    const isCollapsed = collapsed.has(g.key);
+    const cards = isCollapsed ? '' : g.sessions.map(sessionCardHtml).join('');
+    return `
+    <div class="folder-group${isCollapsed ? ' collapsed' : ''}" data-folder-key="${escHtml(g.key)}">
+      <div class="folder-header" data-folder-key="${escHtml(g.key)}">
+        <span class="folder-caret">▾</span>
+        <span class="folder-name">${escHtml(g.label)}</span>
+        <span class="folder-count">${g.sessions.length}</span>
+      </div>
+      <div class="folder-sessions">${cards}</div>
+    </div>`;
+  }).join('');
+
+  list.innerHTML = html;
+
+  list.querySelectorAll('.folder-header').forEach(header => {
+    header.onclick = () => {
+      toggleFolderCollapsed(header.dataset.folderKey);
+      renderSessionList(lastSessions);
+    };
+  });
 
   list.querySelectorAll('.session-card').forEach(card => {
     const id = card.dataset.id;
