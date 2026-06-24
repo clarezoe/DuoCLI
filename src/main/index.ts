@@ -2068,12 +2068,11 @@ function registerIPC(): void {
           return { ok: false, error: `"${name}" already exists in this folder` };
         }
 
-        // Resolve the gh binary: rely on PATH first, then common Homebrew locations.
-        const ghCandidates = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh'];
-        const ghBin = ghCandidates.find((c) => c === 'gh' || fs.existsSync(c));
-        if (!ghBin) {
-          return { ok: false, error: 'gh CLI not found — install GitHub CLI' };
-        }
+        // Resolve the gh binary: prefer existing absolute paths (GUI apps don't
+        // inherit the shell PATH), fall back to bare `gh` last.
+        const augmentedPath = `${process.env.PATH || ''}:/opt/homebrew/bin:/usr/local/bin`;
+        const ghBin =
+          ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'].find((c) => fs.existsSync(c)) || 'gh';
 
         const { execFile } = require('child_process') as typeof import('child_process');
         const result = await new Promise<{ ok: boolean; path?: string; error?: string }>(
@@ -2081,7 +2080,12 @@ function registerIPC(): void {
             execFile(
               ghBin,
               ['repo', 'create', name, `--${visibility}`, '--clone'],
-              { cwd: parentDir, timeout: 60000, windowsHide: true },
+              {
+                cwd: parentDir,
+                timeout: 60000,
+                windowsHide: true,
+                env: { ...process.env, PATH: augmentedPath },
+              },
               (err, _stdout, stderr) => {
                 if (err) {
                   // gh exits non-zero on auth failure / name conflict / etc. Surface its message
