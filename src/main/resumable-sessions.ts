@@ -219,6 +219,61 @@ export function readHead(filePath: string, maxBytes = PROJECTS_HEAD_BYTES): stri
   }
 }
 
+// Read the first `maxLines` newline-delimited lines from the head of a file, streaming in
+// chunks and stopping as soon as `maxLines` newlines are seen. Unlike `readHead` (byte-bounded),
+// this is line-bounded: a single pathological record (e.g. a 56KB SessionStart-hook `attachment`)
+// counts as ONE line and can't crowd real user/assistant messages out of the window. A generous
+// `maxBytesCap` guards against a degenerate single huge line OOMing the read. Returns the joined
+// lines (no trailing partial line beyond the cap is included).
+export function readHeadLines(
+  filePath: string,
+  maxLines: number,
+  maxBytesCap = 4 * 1024 * 1024,
+): string {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const CHUNK = 64 * 1024;
+    const chunk = Buffer.alloc(CHUNK);
+    let text = '';
+    let total = 0;
+    let position = 0;
+    let newlines = 0;
+    for (;;) {
+      const want = Math.min(CHUNK, maxBytesCap - total);
+      if (want <= 0) break;
+      const bytes = fs.readSync(fd, chunk, 0, want, position);
+      if (bytes <= 0) break;
+      position += bytes;
+      total += bytes;
+      const slice = chunk.subarray(0, bytes).toString('utf-8');
+      text += slice;
+      for (let i = 0; i < slice.length; i++) {
+        if (slice.charCodeAt(i) === 10 /* \n */) {
+          newlines++;
+          if (newlines >= maxLines) break;
+        }
+      }
+      if (newlines >= maxLines) break;
+      if (bytes < want) break; // EOF
+    }
+    if (newlines >= maxLines) {
+      // Trim to exactly the first `maxLines` lines.
+      let cut = -1;
+      let seen = 0;
+      for (let i = 0; i < text.length; i++) {
+        if (text.charCodeAt(i) === 10) {
+          seen++;
+          if (seen >= maxLines) { cut = i; break; }
+        }
+      }
+      if (cut >= 0) text = text.slice(0, cut);
+    }
+    return text;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 // Read up to tailBytes from the END of a file. Claude appends the `ai-title` line late, so for
 // large jsonl files it can sit beyond the head window; scanning the tail recovers it cheaply.
 export function readTail(filePath: string, size: number, tailBytes = 32 * 1024): string {
