@@ -82,6 +82,7 @@
     "@xterm/xterm": "^5.5.0",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.11",
+    "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "marked": "^15.0.12",
     "node-pty": "^1.0.0",
@@ -89,68 +90,5 @@
     "sharp": "^0.34.5",
     "web-push": "^3.6.7",
     "ws": "^8.19.0"
-  },
-  "build": {
-    "npmRebuild": true,
-    "appId": "com.posse.app",
-    "productName": "Posse",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "mobile/client/**/*",
-      "node_modules/**/*",
-      "!node_modules/.cache",
-      "!node_modules/png-to-ico"
-    ],
-    "asarUnpack": [
-      "node_modules/sharp/**/*",
-      "node_modules/@img/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "node_modules/@xterm/xterm/css/xterm.css",
-        "to": "xterm.css"
-      },
-      {
-        "from": "frp",
-        "to": "frp",
-        "filter": [
-          "cloudflared-config.yml"
-        ]
-      },
-      {
-        "from": "scripts/posse-remote-bootstrap.sh",
-        "to": "scripts/posse-remote-bootstrap.sh"
-      }
-    ],
-    "mac": {
-      "icon": "build/icon.icns",
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        }
-      ],
-      "category": "public.app-category.developer-tools"
-    },
-    "win": {
-      "icon": "build/icon.ico",
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
-    },
-    "linux": {
-      "icon": "build/icon.png",
-      "target": "AppImage",
-      "category": "Development"
-    }
   }
 }
