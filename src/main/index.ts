@@ -27,6 +27,7 @@ import {
   extractRenameTitle,
   isRealUserPrompt,
   readHead,
+  readHeadLines,
   findClaudeTitleFields,
   resolveClaudeTitle,
   getCachedClaudeTitle,
@@ -1227,7 +1228,11 @@ function buildClaudeSessionFromFile(
 ): DiscoveredSession | null {
   try {
     // Head read: recover real cwd + first-real-user-message fallback (titles handled below).
-    const head = readHead(full);
+    // Read by LINES, not bytes: a single huge sidecar record (e.g. a SessionStart hook injecting
+    // a 56KB `attachment`) is just ONE line, so a byte-bounded head (`readHead`'s 64KB) could be
+    // fully consumed by it and push the first real user/assistant message past the window —
+    // dropping the whole session. A line-bounded window reaches the real messages regardless.
+    const head = readHeadLines(full, 200);
     const lines = head.split('\n');
     let cwd = '';
     let firstUserTitle = '';
@@ -1240,9 +1245,12 @@ function buildClaudeSessionFromFile(
       try { obj = JSON.parse(trimmed); } catch { continue; }
       if (!cwd && typeof obj.cwd === 'string' && obj.cwd) cwd = obj.cwd;
       // A real transcript carries user/assistant messages. Files that hold only Claude Code's
-      // sidecar records (type:"bridge-session", "queue-operation", …) are not resumable
-      // sessions; without this they show as phantom "id 不存在" rows under a folder.
-      if (obj.type === 'user' || obj.type === 'assistant') hasConversation = true;
+      // sidecar records (type:"bridge-session", "queue-operation", "mode", "permission-mode",
+      // "last-prompt", …) are not resumable sessions; without this they show as phantom
+      // "id 不存在" rows under a folder. `attachment` records (pasted image / hook output) ONLY
+      // exist inside real conversations, so they count as conversation evidence too — this is a
+      // belt-and-suspenders so a session whose head holds only a big attachment isn't dropped.
+      if (obj.type === 'user' || obj.type === 'assistant' || obj.type === 'attachment') hasConversation = true;
       // Legacy rename marker (low-priority fallback). Match the RAW text; last rename wins.
       if (obj.type === 'user' && typeof obj.message?.content === 'string') {
         const r = extractRenameTitle(obj.message.content);
