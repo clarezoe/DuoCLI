@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('posse', {
 
   // Select folder
   selectFolder: (currentPath?: string) => ipcRenderer.invoke('dialog:select-folder', currentPath),
+  // Create a new GitHub repo via `gh repo create --clone` and return its local clone path
+  projectCreateGithubRepo: (opts: { name: string; visibility: 'private' | 'public'; parentDir: string }) =>
+    ipcRenderer.invoke('project:create-github-repo', opts) as Promise<{ ok: boolean; path?: string; error?: string }>,
   // List SSH host aliases from ~/.ssh/config (Phase 1 SSH terminal picker)
   sshListHosts: () => ipcRenderer.invoke('ssh:list-hosts'),
   // Read directory tree (for the left-side file tree)

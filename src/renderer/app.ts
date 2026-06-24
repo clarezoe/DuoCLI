@@ -55,6 +55,7 @@ declare global {
       getSessions: () => Promise<PtySessionInfo[]>;
       daemonRestart: () => Promise<{ ok: boolean; error?: string }>;
       selectFolder: (currentPath?: string) => Promise<string | null>;
+      projectCreateGithubRepo: (opts: { name: string; visibility: 'private' | 'public'; parentDir: string }) => Promise<{ ok: boolean; path?: string; error?: string }>;
       sshListHosts: () => Promise<Array<{ host: string; hostName?: string; user?: string }>>;
       fileTreeListDir: (dirPath: string) => Promise<Array<{ name: string; path: string; isDir: boolean }>>;
       fileTreeTrash: (p: string) => Promise<{ ok: boolean; error?: string }>;
@@ -3217,9 +3218,10 @@ function showProjectMenu(e: MouseEvent, p: ProjectEntry): void {
   positionNavMenu(menu, e);
 }
 
-// "+" on the Projects header → dropdown to add a project. Both options open the native folder
-// picker; "Start from scratch" is intended for a fresh empty folder, "Use an existing folder"
-// for one with existing work. Both add the picked folder to the persisted project list.
+// "+" on the Projects header → dropdown to add a project.
+// "Start from scratch" creates a brand-new GitHub repo via `gh repo create --clone`, then adds the
+// local clone as a project. "Use an existing folder" opens the native folder picker and adds the
+// chosen folder. Both add a folder to the persisted project list.
 function showAddProjectMenu(e: MouseEvent): void {
   dismissNavMenus();
   const menu = document.createElement('div');
@@ -3227,10 +3229,7 @@ function showAddProjectMenu(e: MouseEvent): void {
   const items: Array<{ label: string; action: () => Promise<void> }> = [
     {
       label: 'Start from scratch',
-      action: async () => {
-        const folder = await window.posse.selectFolder(currentCwd || undefined);
-        if (folder) { addProject(folder); selectProject(folder); void refreshProjectsData(); }
-      },
+      action: async () => { await openCreateRepoDialog(); },
     },
     {
       label: 'Use an existing folder',
@@ -3248,6 +3247,102 @@ function showAddProjectMenu(e: MouseEvent): void {
     menu.appendChild(el);
   }
   positionNavMenu(menu, e);
+}
+
+// "Start from scratch" → create a new GitHub repo (gh repo create --clone) and add the clone as a
+// project. Fields: name, visibility (private default), parent folder to clone into.
+function openCreateRepoDialog(): Promise<void> {
+  return new Promise((resolve) => {
+    let parentDir = currentCwd || '';
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `
+      <h3>Create New GitHub Repo</h3>
+      <div class="preset-form">
+        <div class="preset-form-field">
+          <label>Repository name</label>
+          <input type="text" id="repo-name-input" placeholder="e.g. my-new-app" />
+        </div>
+        <div class="preset-form-field">
+          <label>Visibility</label>
+          <div style="display:flex;gap:16px;align-items:center">
+            <label style="display:flex;gap:6px;align-items:center;font-weight:normal">
+              <input type="radio" name="repo-visibility" value="private" checked /> Private
+            </label>
+            <label style="display:flex;gap:6px;align-items:center;font-weight:normal">
+              <input type="radio" name="repo-visibility" value="public" /> Public
+            </label>
+          </div>
+        </div>
+        <div class="preset-form-field">
+          <label>Clone into</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="repo-parent-path" style="flex:1;font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+            <button class="btn-cancel" id="repo-choose-folder" style="flex:none">Choose…</button>
+          </div>
+        </div>
+        <div class="preset-form-error" id="repo-create-error" style="color:var(--danger);min-height:16px;font-size:12px"></div>
+      </div>
+      <div class="confirm-buttons" style="margin-top:16px">
+        <button class="btn-cancel">Cancel</button>
+        <button class="btn-close-confirm" style="background:var(--accent)">Create</button>
+      </div>`;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const nameInput = dialog.querySelector('#repo-name-input') as HTMLInputElement;
+    const parentPathEl = dialog.querySelector('#repo-parent-path') as HTMLElement;
+    const chooseBtn = dialog.querySelector('#repo-choose-folder') as HTMLButtonElement;
+    const errorEl = dialog.querySelector('#repo-create-error') as HTMLElement;
+    const createBtn = dialog.querySelector('.btn-close-confirm') as HTMLButtonElement;
+    nameInput.focus();
+
+    const renderParent = () => { parentPathEl.textContent = parentDir || '(choose a folder)'; };
+    renderParent();
+
+    const cleanup = () => { overlay.remove(); resolve(); };
+
+    chooseBtn.addEventListener('click', () => {
+      void (async () => {
+        const folder = await window.posse.selectFolder(parentDir || undefined);
+        if (folder) { parentDir = folder; renderParent(); }
+      })();
+    });
+
+    const onCreate = async () => {
+      const name = nameInput.value.trim();
+      const visibility = (dialog.querySelector('input[name="repo-visibility"]:checked') as HTMLInputElement)?.value === 'public'
+        ? 'public' : 'private';
+      if (!name) { nameInput.style.borderColor = 'var(--danger)'; return; }
+      if (!parentDir) { errorEl.textContent = 'Choose a folder to clone into'; return; }
+      createBtn.disabled = true;
+      createBtn.textContent = 'Creating repo…';
+      errorEl.textContent = '';
+      const res = await window.posse.projectCreateGithubRepo({ name, visibility, parentDir });
+      if (!res.ok || !res.path) {
+        errorEl.textContent = res.error || 'Failed to create repository';
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create';
+        return;
+      }
+      const repoPath = res.path;
+      cleanup();
+      addProject(repoPath);
+      selectProject(repoPath);
+      void refreshProjectsData();
+    };
+
+    dialog.querySelector('.confirm-buttons .btn-cancel')!.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) cleanup(); });
+    createBtn.addEventListener('click', () => { void onCreate(); });
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') { void onCreate(); }
+      if (ev.key === 'Escape') cleanup();
+    };
+    nameInput.addEventListener('keydown', onKey);
+  });
 }
 
 // Build the agent option list (built-ins + custom presets) for the new-conversation picker
