@@ -1,0 +1,86 @@
+# Release pipeline: builds Posse for mac + windows and publishes to GitHub Releases.
+#
+# HOW TO CUT A RELEASE
+#   1. Push a tag matching `v*` (e.g. `git tag v1 && git push origin v1`), OR
+#      run this workflow manually from the Actions tab (workflow_dispatch).
+#   2. Each job runs `electron-builder --publish always`, which builds the
+#      installer AND uploads it + the auto-update channel file
+#      (latest-mac.yml / latest.yml) to the GitHub Release for the tag.
+#   3. Auth: the built-in GITHUB_TOKEN (exposed as GH_TOKEN) is enough for
+#      same-repo releases — no extra secret needed.
+#
+# VERSION
+#   CI derives the version the same way the app does — scripts/derive-version.js
+#   (time-based 1.2.<seconds-since-2026>) — and passes it to electron-builder via
+#   --config.extraMetadata.version. We do NOT call `npm run build:mac` (it runs
+#   mac-only bash like install-to-applications.sh and would break in CI); we call
+#   electron-builder directly, which is cross-platform.
+#
+# NATIVE MODULES
+#   node-pty + sharp are native. electron-builder runs @electron/rebuild
+#   automatically (npmRebuild: true), so they are recompiled for Electron on each
+#   runner. The windows-latest runner ships the MSVC build tools node-pty needs.
+#   RISK: node-pty's prebuilt/compile step is the most likely cross-platform
+#   failure point — CI is the first real Windows build, so watch this step.
+#
+# CODE-SIGNING CAVEAT
+#   No signing certs are configured. Consequences:
+#     - macOS: the DMG is UNSIGNED → users get a Gatekeeper "unidentified
+#       developer" warning, AND in-app auto-update cannot relaunch (Squirrel.Mac
+#       requires a signed+notarized app). Mac auto-update only works once signing
+#       is added.
+#     - Windows: the NSIS .exe is unsigned → SmartScreen warning, but auto-update
+#       still functions.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install setuptools # node-gyp needs distutils on Python 3.12+
+      - run: npm ci
+      - run: npm run build:ts
+      - run: npm run copy:html
+      - name: Build & publish (mac)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --publish always --config.extraMetadata.version=$(node scripts/derive-version.js)
+
+  release-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install setuptools
+      - run: npm ci
+      - run: npm run build:ts
+      - run: npm run copy:html
+      - name: Build & publish (win)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Use bash (available on GH windows runners) so $(...) version substitution
+        # behaves the same as on mac; node works on Windows to compute the version.
+        shell: bash
+        run: npx electron-builder --win --publish always --config.extraMetadata.version=$(node scripts/derive-version.js)

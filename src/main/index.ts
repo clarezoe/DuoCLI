@@ -15,6 +15,7 @@ import { CloudflaredManager } from './cloudflared-manager';
 import { ChatSessionManager } from './chat-session-manager';
 import { WindsurfProxyManager } from './windsurf-proxy-manager';
 import { bootstrapRemoteHost } from './remote-bootstrap';
+import { autoUpdater } from 'electron-updater';
 import buildStamp from './build-stamp.json';
 import {
   type AgentHistorySession,
@@ -2850,6 +2851,40 @@ function registerIPC(): void {
   });
 }
 
+// Auto-update via electron-updater. Reads the GitHub Releases channel files
+// (latest-mac.yml / latest.yml) configured in electron-builder.yml's `publish`.
+//
+// IMPORTANT CAVEAT — macOS signing requirement:
+// macOS auto-update (Squirrel.Mac) REQUIRES the app to be code-signed AND
+// notarized. An UNSIGNED build (the current state — no certs configured) will
+// download the update, but the relaunch fails / Gatekeeper blocks it, so the
+// update does not actually apply on mac. The wiring below is correct and is a
+// no-op-safe in that case; mac auto-update only becomes functional once
+// signing + notarization is set up. Windows (NSIS) auto-update does not need
+// signing to function (users just see a SmartScreen prompt).
+function initAutoUpdater(): void {
+  // Only in packaged builds — dev runs have no release artifacts to update to.
+  if (!app.isPackaged) {
+    return;
+  }
+  try {
+    autoUpdater.logger = {
+      info: (...args: unknown[]) => console.log('[AutoUpdate]', ...args),
+      warn: (...args: unknown[]) => console.warn('[AutoUpdate]', ...args),
+      error: (...args: unknown[]) => console.error('[AutoUpdate]', ...args),
+      debug: () => {},
+    } as unknown as typeof autoUpdater.logger;
+    // Downloads the update (if any) and notifies the user; never throws into
+    // startup — wrapped in try/catch + .catch() so a missing release / offline
+    // machine cannot crash or block app launch.
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.warn('[AutoUpdate] check failed:', err);
+    });
+  } catch (err) {
+    console.warn('[AutoUpdate] init failed:', err);
+  }
+}
+
 app.whenReady().then(async () => {
   await setupPtyManager();
 
@@ -2905,6 +2940,9 @@ app.whenReady().then(async () => {
   registerIPC();
   cloudflaredManager = new CloudflaredManager(path.join(__dirname, '../..'));
   createWindow(appIcon);
+
+  // Check for app updates (packaged builds only; never blocks/crashes startup).
+  initAutoUpdater();
 
   // Start the remote-access server (mobile)
   setAppVersionProvider(() => app.getVersion());

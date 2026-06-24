@@ -1,19 +1,75 @@
-appId: com.duocli.app
+# electron-builder configuration.
+#
+# NOTE on config precedence: electron-builder loads a dedicated config file
+# (this electron-builder.yml) and IGNORES the package.json "build" field when a
+# config file is present. So THIS file is the single source of truth — the old
+# package.json "build" field was being silently ignored. Keep everything here.
+#
+# Auto-update: `publish: github` makes electron-builder emit the channel files
+# (latest-mac.yml for mac, latest.yml for win) that electron-updater reads, and
+# (with --publish always) uploads artifacts + channel files to the GitHub
+# Release for the current tag.
+appId: com.posse.app
 productName: Posse
+npmRebuild: true
+
+# Native modules (node-pty, sharp) are rebuilt for Electron automatically by
+# @electron/rebuild during packaging (npmRebuild: true).
+files:
+  - dist/**/*
+  - mobile/client/**/*
+  - node_modules/**/*
+  - "!node_modules/.cache"
+  - "!node_modules/png-to-ico"
+
+asar: true
+asarUnpack:
+  - "node_modules/sharp/**/*"
+  - "node_modules/@img/**/*"
+
+extraResources:
+  - from: node_modules/@xterm/xterm/css/xterm.css
+    to: xterm.css
+  - from: frp
+    to: frp
+    filter:
+      - cloudflared-config.yml
+  - from: scripts/posse-remote-bootstrap.sh
+    to: scripts/posse-remote-bootstrap.sh
+
+directories:
+  output: release
+
+# Publish to GitHub Releases. electron-updater reads the channel files
+# (latest-mac.yml / latest.yml) from these releases to check for updates.
+publish:
+  provider: github
+  owner: Fei2-Labs
+  repo: posse
+
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg
       arch:
         - arm64
-  icon: build/icon.icns
-files:
-  - dist/**/*
-  - node_modules/**/*
-  - "!node_modules/.cache"
-asar: true
-asarUnpack:
-  - "node_modules/sharp/**/*"
-  - "node_modules/@img/**/*"
-directories:
-  output: release
+  # CAVEAT: macOS auto-update (Squirrel.Mac) REQUIRES a code-signed +
+  # notarized app. This build is currently UNSIGNED, so electron-updater will
+  # download the update but the relaunch will fail / Gatekeeper will block it.
+  # The wiring is correct; mac auto-update only works once signing is added.
+
+win:
+  icon: build/icon.ico
+  target: nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+
+linux:
+  icon: build/icon.png
+  target: AppImage
+  category: Development
