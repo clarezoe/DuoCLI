@@ -100,6 +100,7 @@ declare global {
       openUrl: (url: string) => Promise<void>;
       getAppVersion: () => Promise<string>;
       getBuildInfo: () => Promise<{ version: string; packaged: boolean; sha: string; branch: string; dirty: boolean; builtAt: string }>;
+      checkForUpdates: () => Promise<{ ok: boolean; upToDate?: boolean; behindBy?: number; currentSha?: string; latestSha?: string; latestUrl?: string; error?: string }>;
       getTerminalClientUrl: () => Promise<string>;
       onFileChange: (cb: (filename: string, eventType: string) => void) => void;
       // AI config API
@@ -5300,6 +5301,39 @@ document.getElementById('footer-github')!.addEventListener('click', (e) => {
   e.preventDefault();
   window.posse.openUrl('https://github.com/Fei2-Labs/posse');
 });
+
+// Check for updates — queries GitHub for the latest commit on this build's branch.
+const updateCheckEl = document.getElementById('footer-update-check') as HTMLAnchorElement | null;
+if (updateCheckEl) {
+  let updateChecking = false;
+  updateCheckEl.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (updateChecking) return;
+    updateChecking = true;
+    const originalText = updateCheckEl.textContent;
+    updateCheckEl.textContent = 'Checking…';
+    try {
+      const res = await window.posse.checkForUpdates();
+      if (!res.ok) {
+        showBriefNotice(`Couldn't check for updates (offline?): ${res.error || 'unknown error'}`);
+      } else if (res.upToDate) {
+        showBriefNotice('✓ Up to date');
+      } else if (typeof res.behindBy === 'number' && res.behindBy > 0) {
+        showBriefNotice(`⬆ Update available — ${res.behindBy} new commit${res.behindBy === 1 ? '' : 's'}. Pull & rebuild: git pull && npm run build:mac`);
+        if (res.latestUrl) window.posse.openUrl(res.latestUrl);
+      } else {
+        // Can't compare (local-only / dirty build not on remote).
+        showBriefNotice('Local build — can\'t compare against the remote. Pull & rebuild to be sure.');
+        if (res.latestUrl) window.posse.openUrl(res.latestUrl);
+      }
+    } catch {
+      showBriefNotice('Couldn\'t check for updates.');
+    } finally {
+      updateChecking = false;
+      updateCheckEl.textContent = originalText;
+    }
+  });
+}
 
 const appBuildEl = document.getElementById('app-build');
 window.posse.getBuildInfo().then((info) => {

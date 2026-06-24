@@ -2684,6 +2684,92 @@ function registerIPC(): void {
   }));
   ipcMain.handle('terminal-client:get-url', () => getTerminalClientUrl());
 
+  // Check whether the installed build is behind the repo's latest commit.
+  // Notify-only: this repo is the source the user builds from, so "behind"
+  // means "pull + rebuild". No releases / signing / auto-update involved.
+  ipcMain.handle('update:check', async (): Promise<{
+    ok: boolean;
+    upToDate?: boolean;
+    behindBy?: number;
+    currentSha?: string;
+    latestSha?: string;
+    latestUrl?: string;
+    error?: string;
+  }> => {
+    const REPO = 'Fei2-Labs/posse';
+    const currentSha = buildStamp.sha;
+    const branch = buildStamp.branch || 'main';
+    const ghHeaders = { 'User-Agent': 'posse-update-check', Accept: 'application/vnd.github+json' };
+
+    const ghFetch = async (url: string): Promise<Response> => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10000);
+      try {
+        return await fetch(url, { headers: ghHeaders, signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    try {
+      // 1. Latest commit on the branch.
+      const commitRes = await ghFetch(`https://api.github.com/repos/${REPO}/commits/${encodeURIComponent(branch)}`);
+      if (!commitRes.ok) {
+        return { ok: false, error: `GitHub API error (${commitRes.status})` };
+      }
+      const commitData = await commitRes.json() as { sha?: string };
+      const latestSha = commitData.sha;
+      if (!latestSha) {
+        return { ok: false, error: 'Could not parse latest commit' };
+      }
+
+      const branchUrl = `https://github.com/${REPO}/commits/${branch}`;
+      // buildStamp.sha is a SHORT sha — compare via startsWith.
+      const shaMatches = latestSha.startsWith(currentSha) || currentSha.startsWith(latestSha);
+
+      // 2. How far behind: compare currentSha...branch → ahead_by.
+      try {
+        const cmpRes = await ghFetch(
+          `https://api.github.com/repos/${REPO}/compare/${encodeURIComponent(currentSha)}...${encodeURIComponent(branch)}`
+        );
+        if (cmpRes.ok) {
+          const cmp = await cmpRes.json() as { ahead_by?: number; html_url?: string };
+          const behindBy = typeof cmp.ahead_by === 'number' ? cmp.ahead_by : (shaMatches ? 0 : undefined);
+          return {
+            ok: true,
+            upToDate: behindBy === 0 || shaMatches,
+            behindBy,
+            currentSha,
+            latestSha,
+            latestUrl: cmp.html_url || branchUrl,
+          };
+        }
+        // 404 etc: currentSha not on remote (dirty / local-only build).
+        // Fall back to a plain sha-equality check.
+        return {
+          ok: true,
+          upToDate: shaMatches,
+          behindBy: shaMatches ? 0 : undefined,
+          currentSha,
+          latestSha,
+          latestUrl: branchUrl,
+        };
+      } catch {
+        return {
+          ok: true,
+          upToDate: shaMatches,
+          behindBy: shaMatches ? 0 : undefined,
+          currentSha,
+          latestSha,
+          latestUrl: branchUrl,
+        };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  });
+
   // ========== AI config IPC ==========
 
   // Apply the manual config directly (saves the preference; no longer calls the removed AI service)
