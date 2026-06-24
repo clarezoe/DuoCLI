@@ -296,6 +296,58 @@ header h2 {
   margin-left: 8px;
 }
 
+/* ========== 项目文件夹分组 ========== */
+
+.folder-group {
+  margin-bottom: 4px;
+}
+
+.folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 6px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.folder-header:active {
+  opacity: 0.7;
+}
+
+.folder-caret {
+  color: var(--text2);
+  font-size: 11px;
+  width: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.folder-group.collapsed .folder-caret {
+  transform: rotate(-90deg);
+}
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--bg3);
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+
 .empty-state {
   flex: 1;
   display: flex;
