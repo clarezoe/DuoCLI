@@ -1,6 +1,6 @@
 // Posse Mobile - Service Worker
 
-const CACHE_NAME = 'posse-v23';
+const CACHE_NAME = 'posse-v24';
 const ASSETS = [
   '/',
   '/index.html',

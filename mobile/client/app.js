@@ -14,7 +14,7 @@ let token = localStorage.getItem('duocli_token') || '';
 let currentSessionId = null;
 let sseSource = null;
 // bump in lockstep with sw.js CACHE_NAME so a stale client cache is visible
-const CLIENT_BUILD = 'posse-v23';
+const CLIENT_BUILD = 'posse-v24';
 let lastServerInfo = null;
 
 // xterm.js 相关
@@ -1973,6 +1973,13 @@ function wsSendHex(hexStr) {
 // ========== iOS 键盘弹出时输入框紧贴键盘 ==========
 if (window.visualViewport) {
   const vv = window.visualViewport;
+  // 记住上一次键盘是否打开。adjustForKeyboard 同时挂在 vv 的 resize + scroll 上，
+  // 而 iOS 在终端触摸滑动时也会持续派发 vv 'scroll' 事件 → 该函数会在滑动过程中反复触发。
+  // 早先版本（d62d608）每次触发都会 requestAnimationFrame(() => safeFit())，即 term.resize()，
+  // 滑动中途 resize 会把 xterm 视口弹回底部 → 终端表现为“无法触摸滚动”（#61 回归）。
+  // 修复：只有键盘“开/关状态真正切换”时才重排页面 + 重新 fit；键盘开着时的 vv scroll
+  // 仍维持顶栏吸附（cheap：top/height/scrollTo），但绝不再 fit，从而放行触摸滚动。
+  let keyboardOpen = false;
   function adjustForKeyboard() {
     // Whichever input-bearing page is active (terminal detail or chat detail).
     const page = ['detail-page', 'chat-detail-page'].map(id => $(id)).find(p => p && p.classList.contains('active'));
@@ -1982,20 +1989,24 @@ if (window.visualViewport) {
     const shortcutBar = $('shortcut-bar');
 
     const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    const nowOpen = keyboardHeight > 50;
+    const transitioned = nowOpen !== keyboardOpen;
+    keyboardOpen = nowOpen;
 
-    if (keyboardHeight > 50) {
+    if (nowOpen) {
       // Keyboard open. Pin the page to the VISUAL viewport: top = vv.offsetTop and
       // height = vv.height. Earlier this used top:0 + bottom:keyboardHeight, but iOS
       // also SCROLLS the layout viewport up to reveal the focused input, which carried
       // the position:fixed header off-screen (#40). Anchoring to offsetTop + forcing the
       // layout viewport back to 0 keeps the header pinned at the visible top.
+      // 这一段每次都跑（即便没切换状态），保证键盘开着时顶栏持续吸附在可视顶部（#40）。
       page.style.top = vv.offsetTop + 'px';
       page.style.bottom = 'auto';
       page.style.height = vv.height + 'px';
       if (inputArea) inputArea.style.paddingBottom = '6px';
       if (shortcutBar) shortcutBar.style.paddingBottom = '0';
       if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
-    } else {
+    } else if (transitioned) {
       page.style.top = '';
       page.style.bottom = '';
       page.style.height = '';
@@ -2003,8 +2014,9 @@ if (window.visualViewport) {
       if (shortcutBar) shortcutBar.style.paddingBottom = '';
     }
 
-    // 重新 fit 终端
-    if (fitAddon && term) {
+    // 仅在键盘开/关切换时重新 fit 终端。键盘未变（典型：终端触摸滑动触发的 vv scroll）
+    // 时不能 resize，否则会打断/弹回正在进行的触摸滚动（#61）。
+    if (transitioned && fitAddon && term) {
       requestAnimationFrame(() => safeFit());
     }
   }
