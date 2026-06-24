@@ -460,7 +460,13 @@ function getProjectSessions(projPath: string): Map<string, ProjectAgentGroup> {
 // True if the project has at least one session for the active agent tab.
 function projectVisibleUnderTab(p: ProjectEntry): boolean {
   if (activeAgentTab === 'all') return true;
-  const g = getProjectSessions(p.path).get(activeAgentTab);
+  const sessions = getProjectSessions(p.path);
+  // A freshly-added project with no sessions has no agent family — keep it visible
+  // under every tab, else the just-added folder vanishes (only search finds it). (#77)
+  let total = 0;
+  for (const g of sessions.values()) total += g.lives.length + g.closed.length + g.history.length;
+  if (total === 0) return true;
+  const g = sessions.get(activeAgentTab);
   return !!g && (g.lives.length + g.closed.length + g.history.length) > 0;
 }
 
